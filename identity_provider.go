@@ -213,6 +213,8 @@ func (idp *IdentityProvider) ServeIDPInitiated(w http.ResponseWriter, r *http.Re
 
 	session := idp.SessionProvider.GetSession(w, r, req)
 	if session == nil {
+		// If GetSession returns nil, it must have written an HTTP response, per the interface
+		// (this is probably because it drew a login form or something)
 		return
 	}
 
@@ -231,6 +233,11 @@ func (idp *IdentityProvider) ServeIDPInitiated(w http.ResponseWriter, r *http.Re
 	for _, endpoint := range req.ServiceProviderMetadata.SPSSODescriptor.AssertionConsumerService {
 		req.ACSEndpoint = &endpoint
 		break
+	}
+	if req.ACSEndpoint == nil {
+		log.Printf("saml metadata does not contain an Assertion Customer Service url")
+		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
+		return
 	}
 
 	if err := req.MakeAssertion(session); err != nil {
@@ -305,15 +312,14 @@ func (req *IdpAuthnRequest) Validate() error {
 	// TODO(ross): is this supposed to be the metdata URL? or the target URL?
 	//   i.e. should idp.SSOURL actually be idp.Metadata().EntityID?
 	if req.Request.Destination != req.IDP.SSOURL.String() {
-		return fmt.Errorf("expected destination to be %q, not %q",
-			req.IDP.SSOURL.String(), req.Request.Destination)
+		return fmt.Errorf("expected destination to be %q, not %q", req.IDP.SSOURL.String(), req.Request.Destination)
 	}
 	if req.Request.IssueInstant.Add(MaxIssueDelay).Before(TimeNow()) {
 		return fmt.Errorf("request expired at %s",
 			req.Request.IssueInstant.Add(MaxIssueDelay))
 	}
 	if req.Request.Version != "2.0" {
-		return fmt.Errorf("expected SAML request version 2, got %q", req.Request.Version)
+		return fmt.Errorf("expected SAML request version 2.0 got %v", req.Request.Version)
 	}
 
 	// find the service provider

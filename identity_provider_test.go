@@ -423,7 +423,7 @@ func (test *IdentityProviderTest) TestCanValidate(c *C) {
 			"    AllowCreate=\"true\">urn:oasis:names:tc:SAML:2.0:nameid-format:transient</NameIDPolicy>" +
 			"</AuthnRequest>"),
 	}
-	c.Assert(req.Validate(), ErrorMatches, "expected SAML request version 2, got \"4.2\"")
+	c.Assert(req.Validate(), ErrorMatches, "expected SAML request version 2.0 got 4.2")
 
 	req = IdpAuthnRequest{
 		IDP: &test.IDP,
