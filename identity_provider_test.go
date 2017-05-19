@@ -656,7 +656,7 @@ func (test *IdentityProviderTest) TestMarshalAssertion(c *C) {
 		UserName: "alice",
 	})
 	c.Assert(err, IsNil)
-	err = req.MarshalAssertion()
+	err = req.MakeAssertionEl()
 	c.Assert(err, IsNil)
 
 	// Compare the plaintext first
@@ -664,9 +664,7 @@ func (test *IdentityProviderTest) TestMarshalAssertion(c *C) {
 	actualPlaintext := ""
 	{
 		doc := etree.NewDocument()
-		err := doc.ReadFromBytes(req.AssertionBuffer)
-		c.Assert(err, IsNil)
-
+		doc.SetRoot(req.AssertionEl)
 		el := doc.FindElement("//EncryptedAssertion/EncryptedData")
 		actualPlaintextBuf, err := xmlenc.Decrypt(test.SPKey, el)
 		c.Assert(err, IsNil)
@@ -674,7 +672,11 @@ func (test *IdentityProviderTest) TestMarshalAssertion(c *C) {
 	}
 	c.Assert(actualPlaintext, Equals, expectedPlaintext)
 
-	c.Assert(string(req.AssertionBuffer), Equals, "<saml2:EncryptedAssertion xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:protocol\"><xenc:EncryptedData xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\" Id=\"_e285ece1511455780875d64ee2d3d0d0\" Type=\"http://www.w3.org/2001/04/xmlenc#Element\"><xenc:EncryptionMethod Algorithm=\"http://www.w3.org/2001/04/xmlenc#aes128-cbc\" xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"/><ds:KeyInfo xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\"><xenc:EncryptedKey Id=\"_6e4ff95ff662a5eee82abdf44a2d0b75\" xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"><xenc:EncryptionMethod Algorithm=\"http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p\" xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"><ds:DigestMethod Algorithm=\"http://www.w3.org/2000/09/xmldsig#sha1\" xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\"/></xenc:EncryptionMethod><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIB7zCCAVgCCQDFzbKIp7b3MTANBgkqhkiG9w0BAQUFADA8MQswCQYDVQQGEwJVUzELMAkGA1UECAwCR0ExDDAKBgNVBAoMA2ZvbzESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTEzMTAwMjAwMDg1MVoXDTE0MTAwMjAwMDg1MVowPDELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkdBMQwwCgYDVQQKDANmb28xEjAQBgNVBAMMCWxvY2FsaG9zdDCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA1PMHYmhZj308kWLhZVT4vOulqx/9ibm5B86fPWwUKKQ2i12MYtz07tzukPymisTDhQaqyJ8Kqb/6JjhmeMnEOdTvSPmHO8m1ZVveJU6NoKRn/mP/BD7FW52WhbrUXLSeHVSKfWkNk6S4hk9MV9TswTvyRIKvRsw0X/gfnqkroJcCAwEAATANBgkqhkiG9w0BAQUFAAOBgQCMMlIO+GNcGekevKgkakpMdAqJfs24maGb90DvTLbRZRD7Xvn1MnVBBS9hzlXiFLYOInXACMW5gcoRFfeTQLSouMM8o57h0uKjfTmuoWHLQLi6hnF+cvCsEFiJZ4AbF+DgmO6TarJ8O05t8zvnOwJlNCASPZRH/JmF8tX0hoHuAQ==</ds:X509Certificate></ds:X509Data></ds:KeyInfo><xenc:CipherData xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"><xenc:CipherValue>R9aHQv2U2ZZSuvRaL4/X8TXpm2/1so2IiOz/+NsAzEKoLAg8Sj87Nj5oMrYY2HF5DPQm/N/3+v6wOU9dX62spTzoSWocVzQU+GdTG2DiIIiAAvQwZo1FyUDKS1Fs5voWzgKvs8G43nj68147T96sXY9SyeUBBdhQtXRsEsmKiAs=</xenc:CipherValue></xenc:CipherData></xenc:EncryptedKey></ds:KeyInfo><xenc:CipherData xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"><xenc:CipherValue>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</xenc:CipherValue></xenc:CipherData></xenc:EncryptedData></saml2:EncryptedAssertion>")
+	doc := etree.NewDocument()
+	doc.SetRoot(req.AssertionEl)
+	assertionBuffer, err := doc.WriteToBytes()
+	c.Assert(err, IsNil)
+	c.Assert(string(assertionBuffer), Equals, "<saml2:EncryptedAssertion xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:protocol\"><xenc:EncryptedData xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\" Id=\"_e285ece1511455780875d64ee2d3d0d0\" Type=\"http://www.w3.org/2001/04/xmlenc#Element\"><xenc:EncryptionMethod Algorithm=\"http://www.w3.org/2001/04/xmlenc#aes128-cbc\" xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"/><ds:KeyInfo xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\"><xenc:EncryptedKey Id=\"_6e4ff95ff662a5eee82abdf44a2d0b75\" xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"><xenc:EncryptionMethod Algorithm=\"http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p\" xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"><ds:DigestMethod Algorithm=\"http://www.w3.org/2000/09/xmldsig#sha1\" xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\"/></xenc:EncryptionMethod><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIB7zCCAVgCCQDFzbKIp7b3MTANBgkqhkiG9w0BAQUFADA8MQswCQYDVQQGEwJVUzELMAkGA1UECAwCR0ExDDAKBgNVBAoMA2ZvbzESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTEzMTAwMjAwMDg1MVoXDTE0MTAwMjAwMDg1MVowPDELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkdBMQwwCgYDVQQKDANmb28xEjAQBgNVBAMMCWxvY2FsaG9zdDCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA1PMHYmhZj308kWLhZVT4vOulqx/9ibm5B86fPWwUKKQ2i12MYtz07tzukPymisTDhQaqyJ8Kqb/6JjhmeMnEOdTvSPmHO8m1ZVveJU6NoKRn/mP/BD7FW52WhbrUXLSeHVSKfWkNk6S4hk9MV9TswTvyRIKvRsw0X/gfnqkroJcCAwEAATANBgkqhkiG9w0BAQUFAAOBgQCMMlIO+GNcGekevKgkakpMdAqJfs24maGb90DvTLbRZRD7Xvn1MnVBBS9hzlXiFLYOInXACMW5gcoRFfeTQLSouMM8o57h0uKjfTmuoWHLQLi6hnF+cvCsEFiJZ4AbF+DgmO6TarJ8O05t8zvnOwJlNCASPZRH/JmF8tX0hoHuAQ==</ds:X509Certificate></ds:X509Data></ds:KeyInfo><xenc:CipherData xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"><xenc:CipherValue>R9aHQv2U2ZZSuvRaL4/X8TXpm2/1so2IiOz/+NsAzEKoLAg8Sj87Nj5oMrYY2HF5DPQm/N/3+v6wOU9dX62spTzoSWocVzQU+GdTG2DiIIiAAvQwZo1FyUDKS1Fs5voWzgKvs8G43nj68147T96sXY9SyeUBBdhQtXRsEsmKiAs=</xenc:CipherValue></xenc:CipherData></xenc:EncryptedKey></ds:KeyInfo><xenc:CipherData xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"><xenc:CipherValue>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</xenc:CipherValue></xenc:CipherData></xenc:EncryptedData></saml2:EncryptedAssertion>")
 }
 
 func (test *IdentityProviderTest) TestMakeResponse(c *C) {
@@ -701,32 +703,29 @@ func (test *IdentityProviderTest) TestMakeResponse(c *C) {
 		UserName: "alice",
 	})
 	c.Assert(err, IsNil)
-	err = req.MarshalAssertion()
+	err = req.MakeAssertionEl()
 	c.Assert(err, IsNil)
 
-	req.AssertionBuffer = []byte("THIS_IS_THE_ENCRYPTED_ASSERTION")
+	req.AssertionEl = etree.NewElement("this-is-an-encrypted-assertion")
 	err = req.MakeResponse()
 	c.Assert(err, IsNil)
 
-	c.Assert(req.Response, DeepEquals, &Response{
-		Destination:  "https://sp.example.com/saml2/acs",
-		ID:           "id-282a2c2e30323436383a3c3e40424446484a4c4e",
-		InResponseTo: "id-00020406080a0c0e10121416181a1c1e",
-		IssueInstant: TimeNow(),
-		Version:      "2.0",
-		Issuer: &Issuer{
-			Format: "urn:oasis:names:tc:SAML:2.0:nameid-format:entity",
-			Value:  "https://idp.example.com/saml/metadata",
-		},
-		Status: &Status{
-			StatusCode: StatusCode{
-				Value: "urn:oasis:names:tc:SAML:2.0:status:Success",
-			},
-		},
-		EncryptedAssertion: &EncryptedAssertion{
-			EncryptedData: []byte("THIS_IS_THE_ENCRYPTED_ASSERTION"),
-		},
-	})
+	response := Response{}
+	err = unmarshalEtreeHack(req.ResponseEl, &response)
+	c.Assert(err, IsNil)
+
+	doc := etree.NewDocument()
+	doc.SetRoot(req.ResponseEl)
+	doc.Indent(2)
+	responseStr, _ := doc.WriteToString()
+	c.Assert(responseStr, DeepEquals, ""+
+		"<Response xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\" IssueInstant=\"2015-12-01T01:57:09Z\" Destination=\"https://sp.example.com/saml2/acs\" ID=\"id-282a2c2e30323436383a3c3e40424446484a4c4e\" InResponseTo=\"id-00020406080a0c0e10121416181a1c1e\" Version=\"2.0\">\n"+
+		"  <Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">https://idp.example.com/saml/metadata</Issuer>\n"+
+		"  <Status xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\">\n"+
+		"    <StatusCode xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\" Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"/>\n"+
+		"  </Status>\n"+
+		"  <this-is-an-encrypted-assertion/>\n"+
+		"</Response>\n")
 }
 
 func (test *IdentityProviderTest) TestWriteResponse(c *C) {
@@ -745,7 +744,7 @@ func (test *IdentityProviderTest) TestWriteResponse(c *C) {
 			"  <NameIDPolicy xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\" " +
 			"    AllowCreate=\"true\">urn:oasis:names:tc:SAML:2.0:nameid-format:transient</NameIDPolicy>" +
 			"</AuthnRequest>"),
-		Response: &Response{ID: "THIS_IS_THE_SAML_RESPONSE"},
+		ResponseEl: etree.NewElement("THIS_IS_THE_SAML_RESPONSE"),
 	}
 	req.HTTPRequest, _ = http.NewRequest("POST", "http://idp.example.com/saml/sso", nil)
 	err := req.Validate()
@@ -755,7 +754,7 @@ func (test *IdentityProviderTest) TestWriteResponse(c *C) {
 	err = req.WriteResponse(w)
 	c.Assert(err, IsNil)
 	c.Assert(w.Code, Equals, 200)
-	c.Assert(string(w.Body.Bytes()), Equals, "<html><form method=\"post\" action=\"https://sp.example.com/saml2/acs\" id=\"SAMLResponseForm\"><input type=\"hidden\" name=\"SAMLResponse\" value=\"PFJlc3BvbnNlIHhtbG5zPSJ1cm46b2FzaXM6bmFtZXM6dGM6U0FNTDoyLjA6cHJvdG9jb2wiIElzc3VlSW5zdGFudD0iMDAwMS0wMS0wMVQwMDowMDowMFoiIERlc3RpbmF0aW9uPSIiIElEPSJUSElTX0lTX1RIRV9TQU1MX1JFU1BPTlNFIiBJblJlc3BvbnNlVG89IiIgVmVyc2lvbj0iIj48L1Jlc3BvbnNlPg==\" /><input type=\"hidden\" name=\"RelayState\" value=\"THIS_IS_THE_RELAY_STATE\" /><input type=\"submit\" value=\"Continue\" /></form><script>document.getElementById('SAMLResponseForm').submit();</script></html>")
+	c.Assert(string(w.Body.Bytes()), Equals, "<html><form method=\"post\" action=\"https://sp.example.com/saml2/acs\" id=\"SAMLResponseForm\"><input type=\"hidden\" name=\"SAMLResponse\" value=\"PFRISVNfSVNfVEhFX1NBTUxfUkVTUE9OU0UvPg==\" /><input type=\"hidden\" name=\"RelayState\" value=\"THIS_IS_THE_RELAY_STATE\" /><input type=\"submit\" value=\"Continue\" /></form><script>document.getElementById('SAMLResponseForm').submit();</script></html>")
 }
 
 func (test *IdentityProviderTest) TestIDPInitiatedNewSession(c *C) {
@@ -805,4 +804,108 @@ func (test *IdentityProviderTest) TestIDPInitiatedBadServiceProvider(c *C) {
 	r, _ := http.NewRequest("GET", "https://idp.example.com/services/sp/whoami", nil)
 	test.IDP.ServeIDPInitiated(w, r, "https://wrong.url/metadata", "ThisIsTheRelayState")
 	c.Assert(w.Code, Equals, http.StatusNotFound)
+}
+
+func (test *IdentityProviderTest) TestCanHandleUnencryptedResponse(c *C) {
+	test.IDP.SessionProvider = &mockSessionProvider{
+		GetSessionFunc: func(w http.ResponseWriter, r *http.Request, req *IdpAuthnRequest) *Session {
+			return &Session{ID: "f00df00df00d", UserName: "alice"}
+		},
+	}
+
+	metadata := Metadata{}
+	err := xml.Unmarshal([]byte(`<?xml version='1.0' encoding='UTF-8'?><md:EntityDescriptor ID='_97e2ce01-fa34-4c09-9126-4f7595ef6bf8' entityID='https://gitlab.example.com/users/auth/saml/metadata' xmlns:md='urn:oasis:names:tc:SAML:2.0:metadata' xmlns:saml='urn:oasis:names:tc:SAML:2.0:assertion'><md:SPSSODescriptor AuthnRequestsSigned='false' WantAssertionsSigned='false' protocolSupportEnumeration='urn:oasis:names:tc:SAML:2.0:protocol'><md:AssertionConsumerService Binding='urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST' Location='https://gitlab.example.com/users/auth/saml/callback' index='0' isDefault='true'/><md:AttributeConsumingService index='1' isDefault='true'><md:ServiceName xml:lang='en'>Required attributes</md:ServiceName><md:RequestedAttribute FriendlyName='Email address' Name='email' NameFormat='urn:oasis:names:tc:SAML:2.0:attrname-format:basic'/><md:RequestedAttribute FriendlyName='Full name' Name='name' NameFormat='urn:oasis:names:tc:SAML:2.0:attrname-format:basic'/><md:RequestedAttribute FriendlyName='Given name' Name='first_name' NameFormat='urn:oasis:names:tc:SAML:2.0:attrname-format:basic'/><md:RequestedAttribute FriendlyName='Family name' Name='last_name' NameFormat='urn:oasis:names:tc:SAML:2.0:attrname-format:basic'/></md:AttributeConsumingService></md:SPSSODescriptor></md:EntityDescriptor>`), &metadata)
+	c.Assert(err, IsNil)
+	test.IDP.ServiceProviderProvider = &mockServiceProviderProvider{
+		GetServiceProviderFunc: func(r *http.Request, serviceProviderID string) (*Metadata, error) {
+			if serviceProviderID == "https://gitlab.example.com/users/saml/metadata" {
+				return &metadata, nil
+			}
+			return nil, os.ErrNotExist
+		},
+	}
+
+	req := IdpAuthnRequest{
+		IDP: &test.IDP,
+		RequestBuffer: []byte("" +
+			"<AuthnRequest xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\" " +
+			"  AssertionConsumerServiceURL=\"https://gitlab.example.com/users/auth/saml/callback\" " +
+			"  Destination=\"https://idp.example.com/saml/sso\" " +
+			"  ID=\"id-00020406080a0c0e10121416181a1c1e\" " +
+			"  IssueInstant=\"2015-12-01T01:57:09Z\" ProtocolBinding=\"\" " +
+			"  Version=\"2.0\">" +
+			"  <Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" " +
+			"    Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">https://gitlab.example.com/users/saml/metadata</Issuer>" +
+			"</AuthnRequest>"),
+	}
+	req.HTTPRequest, _ = http.NewRequest("POST", "http://idp.example.com/saml/sso", nil)
+	err = req.Validate()
+	c.Assert(err, IsNil)
+	err = req.MakeAssertion(&Session{
+		ID:       "f00df00df00d",
+		UserName: "alice",
+	})
+	c.Assert(err, IsNil)
+	err = req.MakeAssertionEl()
+	c.Assert(err, IsNil)
+
+	err = req.MakeResponse()
+	c.Assert(err, IsNil)
+
+	doc := etree.NewDocument()
+	doc.SetRoot(req.ResponseEl)
+	doc.Indent(2)
+	responseStr, _ := doc.WriteToString()
+	c.Assert(responseStr, DeepEquals, ""+
+		"<Response xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\" IssueInstant=\"2015-12-01T01:57:09Z\" Destination=\"https://gitlab.example.com/users/auth/saml/callback\" ID=\"id-282a2c2e30323436383a3c3e40424446484a4c4e\" InResponseTo=\"id-00020406080a0c0e10121416181a1c1e\" Version=\"2.0\">\n"+
+		"  <Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">https://idp.example.com/saml/metadata</Issuer>\n"+
+		"  <Status xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\">\n"+
+		"    <StatusCode xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\" Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"/>\n"+
+		"  </Status>\n"+
+		"  <Assertion xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" IssueInstant=\"2015-12-01T01:57:09Z\" ID=\"id-00020406080a0c0e10121416181a1c1e20222426\" Version=\"2.0\">\n"+
+		"    <Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"XXX\">https://idp.example.com/saml/metadata</Issuer>\n"+
+		"    <Subject xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\">\n"+
+		"      <NameID Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:transient\" NameQualifier=\"https://idp.example.com/saml/metadata\" SPNameQualifier=\"https://gitlab.example.com/users/auth/saml/metadata\"/>\n"+
+		"      <SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\">\n"+
+		"        <SubjectConfirmationData NotOnOrAfter=\"2015-12-01T01:58:39Z\" Address=\"\" InResponseTo=\"id-00020406080a0c0e10121416181a1c1e\" Recipient=\"https://gitlab.example.com/users/auth/saml/callback\"/>\n"+
+		"      </SubjectConfirmation>\n"+
+		"    </Subject>\n"+
+		"    <Conditions NotBefore=\"2015-12-01T01:57:09Z\" NotOnOrAfter=\"2015-12-01T01:58:39Z\">\n"+
+		"      <AudienceRestriction>\n"+
+		"        <Audience>https://gitlab.example.com/users/auth/saml/metadata</Audience>\n"+
+		"      </AudienceRestriction>\n"+
+		"    </Conditions>\n"+
+		"    <AuthnStatement AuthnInstant=\"0001-01-01T00:00:00Z\" SessionIndex=\"\">\n"+
+		"      <SubjectLocality Address=\"\"/>\n"+
+		"      <AuthnContext>\n"+
+		"        <AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</AuthnContextClassRef>\n"+
+		"      </AuthnContext>\n"+
+		"    </AuthnStatement>\n"+
+		"    <AttributeStatement>\n"+
+		"      <Attribute FriendlyName=\"uid\" Name=\"urn:oid:0.9.2342.19200300.100.1.1\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:uri\">\n"+
+		"        <AttributeValue xmlns:XMLSchema-instance=\"http://www.w3.org/2001/XMLSchema-instance\" XMLSchema-instance:type=\"xs:string\">alice</AttributeValue>\n"+
+		"      </Attribute>\n"+
+		"    </AttributeStatement>\n"+
+		"    <ds:Signature xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\">\n"+
+		"      <ds:SignedInfo>\n"+
+		"        <ds:CanonicalizationMethod Algorithm=\"http://www.w3.org/2006/12/xml-c14n11\"/>\n"+
+		"        <ds:SignatureMethod Algorithm=\"http://www.w3.org/2000/09/xmldsig#rsa-sha1\"/>\n"+
+		"        <ds:Reference URI=\"#id-00020406080a0c0e10121416181a1c1e20222426\">\n"+
+		"          <ds:Transforms>\n"+
+		"            <ds:Transform Algorithm=\"http://www.w3.org/2000/09/xmldsig#enveloped-signature\"/>\n"+
+		"            <ds:Transform Algorithm=\"http://www.w3.org/2006/12/xml-c14n11\"/>\n"+
+		"          </ds:Transforms>\n"+
+		"          <ds:DigestMethod Algorithm=\"http://www.w3.org/2000/09/xmldsig#sha1\"/>\n"+
+		"          <ds:DigestValue>9dpXg3jfk43EmOlaWmVpW4AFBCc=</ds:DigestValue>\n"+
+		"        </ds:Reference>\n"+
+		"      </ds:SignedInfo>\n"+
+		"      <ds:SignatureValue>GUxt3bO8ceFjW7GO04JTcIEHn77fS8a5HMYTCSTpPRnzILVa6+JYG1cX9k87E8GnJ/ppoSwP2dGKTY6KGRPlBUMJF3RwXPDjD9F2FRCYEUJa9QiqV9V9cSypI41IeK++gcrVh9rWzYzWugkFzF8NiMupb4g/t+vNBmya3yOq6ik=</ds:SignatureValue>\n"+
+		"      <ds:KeyInfo>\n"+
+		"        <ds:X509Data>\n"+
+		"          <ds:X509Certificate>MIIB7zCCAVgCCQDFzbKIp7b3MTANBgkqhkiG9w0BAQUFADA8MQswCQYDVQQGEwJVUzELMAkGA1UECAwCR0ExDDAKBgNVBAoMA2ZvbzESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTEzMTAwMjAwMDg1MVoXDTE0MTAwMjAwMDg1MVowPDELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkdBMQwwCgYDVQQKDANmb28xEjAQBgNVBAMMCWxvY2FsaG9zdDCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA1PMHYmhZj308kWLhZVT4vOulqx/9ibm5B86fPWwUKKQ2i12MYtz07tzukPymisTDhQaqyJ8Kqb/6JjhmeMnEOdTvSPmHO8m1ZVveJU6NoKRn/mP/BD7FW52WhbrUXLSeHVSKfWkNk6S4hk9MV9TswTvyRIKvRsw0X/gfnqkroJcCAwEAATANBgkqhkiG9w0BAQUFAAOBgQCMMlIO+GNcGekevKgkakpMdAqJfs24maGb90DvTLbRZRD7Xvn1MnVBBS9hzlXiFLYOInXACMW5gcoRFfeTQLSouMM8o57h0uKjfTmuoWHLQLi6hnF+cvCsEFiJZ4AbF+DgmO6TarJ8O05t8zvnOwJlNCASPZRH/JmF8tX0hoHuAQ==</ds:X509Certificate>\n"+
+		"        </ds:X509Data>\n"+
+		"      </ds:KeyInfo>\n"+
+		"    </ds:Signature>\n"+
+		"  </Assertion>\n"+
+		"</Response>\n")
 }

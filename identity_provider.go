@@ -245,6 +245,7 @@ func (idp *IdentityProvider) ServeIDPInitiated(w http.ResponseWriter, r *http.Re
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 		return
 	}
+
 	if err := req.WriteResponse(w); err != nil {
 		log.Printf("failed to write response: %s", err)
 		http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
@@ -262,8 +263,8 @@ type IdpAuthnRequest struct {
 	ServiceProviderMetadata *Metadata
 	ACSEndpoint             *IndexedEndpoint
 	Assertion               *Assertion
-	AssertionBuffer         []byte
-	Response                *Response
+	AssertionEl             *etree.Element
+	ResponseEl              *etree.Element
 }
 
 // NewIdpAuthnRequest returns a new IdpAuthnRequest for the given HTTP request to the authorization
@@ -479,9 +480,8 @@ func (req *IdpAuthnRequest) MakeAssertion(session *Session) error {
 	return nil
 }
 
-// MarshalAssertion sets `AssertionBuffer` to a signed, encrypted
-// version of `Assertion`.
-func (req *IdpAuthnRequest) MarshalAssertion() error {
+// MakeAssertionEl sets `AssertionEl` to a signed, possibly encrypted, version of `Assertion`.
+func (req *IdpAuthnRequest) MakeAssertionEl() error {
 	keyPair := tls.Certificate{
 		Certificate: [][]byte{req.IDP.Certificate.Raw},
 		PrivateKey:  req.IDP.Key,
@@ -504,6 +504,14 @@ func (req *IdpAuthnRequest) MarshalAssertion() error {
 		return err
 	}
 
+	certBuf, err := getSPEncryptionCert(req.ServiceProviderMetadata)
+	if err == os.ErrNotExist {
+		req.AssertionEl = signedAssertionEl
+		return nil
+	} else if err != nil {
+		return err
+	}
+
 	var signedAssertionBuf []byte
 	{
 		doc := etree.NewDocument()
@@ -517,27 +525,17 @@ func (req *IdpAuthnRequest) MarshalAssertion() error {
 	encryptor := xmlenc.OAEP()
 	encryptor.BlockCipher = xmlenc.AES128CBC
 	encryptor.DigestMethod = &xmlenc.SHA1
-	certBuf, err := getSPEncryptionCert(req.ServiceProviderMetadata)
-	if err != nil {
-		return err
-	}
 	encryptedDataEl, err := encryptor.Encrypt(certBuf, signedAssertionBuf)
 	if err != nil {
 		return err
 	}
 	encryptedDataEl.CreateAttr("Type", "http://www.w3.org/2001/04/xmlenc#Element")
 
-	{
-		encryptedAssertionEl := etree.NewElement("saml2:EncryptedAssertion")
-		encryptedAssertionEl.CreateAttr("xmlns:saml2", "urn:oasis:names:tc:SAML:2.0:protocol")
-		encryptedAssertionEl.AddChild(encryptedDataEl)
-		doc := etree.NewDocument()
-		doc.SetRoot(encryptedAssertionEl)
-		req.AssertionBuffer, err = doc.WriteToBytes()
-		if err != nil {
-			return err
-		}
-	}
+	encryptedAssertionEl := etree.NewElement("saml2:EncryptedAssertion")
+	encryptedAssertionEl.CreateAttr("xmlns:saml2", "urn:oasis:names:tc:SAML:2.0:protocol")
+	encryptedAssertionEl.AddChild(encryptedDataEl)
+	req.AssertionEl = encryptedAssertionEl
+
 	return nil
 }
 
@@ -561,12 +559,15 @@ func marshalEtreeHack(v interface{}) (*etree.Element, error) {
 // WriteResponse writes the `Response` to the http.ResponseWriter. If
 // `Response` is not already set, it calls MakeResponse to produce it.
 func (req *IdpAuthnRequest) WriteResponse(w http.ResponseWriter) error {
-	if req.Response == nil {
+	if req.ResponseEl == nil {
 		if err := req.MakeResponse(); err != nil {
 			return err
 		}
 	}
-	responseBuf, err := xml.Marshal(req.Response)
+
+	doc := etree.NewDocument()
+	doc.SetRoot(req.ResponseEl)
+	responseBuf, err := doc.WriteToBytes()
 	if err != nil {
 		return err
 	}
@@ -631,7 +632,7 @@ func getSPEncryptionCert(sp *Metadata) ([]byte, error) {
 	}
 
 	if cert == "" {
-		return nil, fmt.Errorf("cannot find a certificate for encryption in the service provider SSO descriptor")
+		return nil, os.ErrNotExist
 	}
 
 	// cleanup whitespace and re-encode a PEM
@@ -656,16 +657,17 @@ func unmarshalEtreeHack(el *etree.Element, v interface{}) error {
 	return xml.Unmarshal(buf, v)
 }
 
-// MakeResponse creates and assigns a new SAML response in Response. `Assertion` must
-// be non-nill. If MarshalAssertion() has not been called, this function calls it for
+// MakeResponse creates and assigns a new SAML response in ResponseEl. `Assertion` must
+// be non-nil. If MakeAssertionEl() has not been called, this function calls it for
 // you.
 func (req *IdpAuthnRequest) MakeResponse() error {
-	if req.AssertionBuffer == nil {
-		if err := req.MarshalAssertion(); err != nil {
+	if req.AssertionEl == nil {
+		if err := req.MakeAssertionEl(); err != nil {
 			return err
 		}
 	}
-	req.Response = &Response{
+
+	response := &Response{
 		Destination:  req.ACSEndpoint.Location,
 		ID:           fmt.Sprintf("id-%x", randomBytes(20)),
 		InResponseTo: req.Request.ID,
@@ -680,9 +682,13 @@ func (req *IdpAuthnRequest) MakeResponse() error {
 				Value: StatusSuccess,
 			},
 		},
-		EncryptedAssertion: &EncryptedAssertion{
-			EncryptedData: req.AssertionBuffer,
-		},
 	}
+	responseEl, err := marshalEtreeHack(response)
+	if err != nil {
+		return err
+	}
+	responseEl.AddChild(req.AssertionEl)
+
+	req.ResponseEl = responseEl
 	return nil
 }
