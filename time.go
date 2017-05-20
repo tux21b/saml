@@ -43,3 +43,7 @@ func (m *RelaxedTime) UnmarshalText(text []byte) error {
 
 	return err1
 }
+
+func FormatDuration(d time.Duration) string {
+	panic("not implemented")
+}

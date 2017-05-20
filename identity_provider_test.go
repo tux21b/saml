@@ -116,7 +116,7 @@ OwJlNCASPZRH/JmF8tX0hoHuAQ==
 		Certificate: test.SPCertificate,
 		MetadataURL: mustParseURL("https://sp.example.com/saml2/metadata"),
 		AcsURL:      mustParseURL("https://sp.example.com/saml2/acs"),
-		IDPMetadata: &Metadata{},
+		IDPMetadata: &EntityDescriptor{},
 	}
 
 	test.Key = mustParsePrivateKey("-----BEGIN RSA PRIVATE KEY-----\nMIICXgIBAAKBgQDU8wdiaFmPfTyRYuFlVPi866WrH/2JubkHzp89bBQopDaLXYxi\n3PTu3O6Q/KaKxMOFBqrInwqpv/omOGZ4ycQ51O9I+Yc7ybVlW94lTo2gpGf+Y/8E\nPsVbnZaFutRctJ4dVIp9aQ2TpLiGT0xX1OzBO/JEgq9GzDRf+B+eqSuglwIDAQAB\nAoGBAMuy1eN6cgFiCOgBsB3gVDdTKpww87Qk5ivjqEt28SmXO13A1KNVPS6oQ8SJ\nCT5Azc6X/BIAoJCURVL+LHdqebogKljhH/3yIel1kH19vr4E2kTM/tYH+qj8afUS\nJEmArUzsmmK8ccuNqBcllqdwCZjxL4CHDUmyRudFcHVX9oyhAkEA/OV1OkjM3CLU\nN3sqELdMmHq5QZCUihBmk3/N5OvGdqAFGBlEeewlepEVxkh7JnaNXAXrKHRVu/f/\nfbCQxH+qrwJBANeQERF97b9Sibp9xgolb749UWNlAdqmEpmlvmS202TdcaaT1msU\n4rRLiQN3X9O9mq4LZMSVethrQAdX1whawpkCQQDk1yGf7xZpMJ8F4U5sN+F4rLyM\nRq8Sy8p2OBTwzCUXXK+fYeXjybsUUMr6VMYTRP2fQr/LKJIX+E5ZxvcIyFmDAkEA\nyfjNVUNVaIbQTzEbRlRvT6MqR+PTCefC072NF9aJWR93JimspGZMR7viY6IM4lrr\nvBkm0F5yXKaYtoiiDMzlOQJADqmEwXl0D72ZG/2KDg8b4QZEmC9i5gidpQwJXUc6\nhU+IVQoLxRq0fBib/36K9tcrrO5Ba4iEvDcNY+D8yGbUtA==\n-----END RSA PRIVATE KEY-----\n")
@@ -128,7 +128,7 @@ OwJlNCASPZRH/JmF8tX0hoHuAQ==
 		MetadataURL: mustParseURL("https://idp.example.com/saml/metadata"),
 		SSOURL:      mustParseURL("https://idp.example.com/saml/sso"),
 		ServiceProviderProvider: &mockServiceProviderProvider{
-			GetServiceProviderFunc: func(r *http.Request, serviceProviderID string) (*Metadata, error) {
+			GetServiceProviderFunc: func(r *http.Request, serviceProviderID string) (*EntityDescriptor, error) {
 				if serviceProviderID == test.SP.MetadataURL.String() {
 					return test.SP.Metadata(), nil
 				}
@@ -155,48 +155,59 @@ func (msp *mockSessionProvider) GetSession(w http.ResponseWriter, r *http.Reques
 }
 
 type mockServiceProviderProvider struct {
-	GetServiceProviderFunc func(r *http.Request, serviceProviderID string) (*Metadata, error)
+	GetServiceProviderFunc func(r *http.Request, serviceProviderID string) (*EntityDescriptor, error)
 }
 
-func (mspp *mockServiceProviderProvider) GetServiceProvider(r *http.Request, serviceProviderID string) (*Metadata, error) {
+func (mspp *mockServiceProviderProvider) GetServiceProvider(r *http.Request, serviceProviderID string) (*EntityDescriptor, error) {
 	return mspp.GetServiceProviderFunc(r, serviceProviderID)
 }
 
 func (test *IdentityProviderTest) TestCanProduceMetadata(c *C) {
-	c.Assert(test.IDP.Metadata(), DeepEquals, &Metadata{
+	c.Assert(test.IDP.Metadata(), DeepEquals, &EntityDescriptor{
 		ValidUntil:    TimeNow().Add(DefaultValidDuration),
 		CacheDuration: DefaultValidDuration,
 		EntityID:      "https://idp.example.com/saml/metadata",
-		IDPSSODescriptor: &IDPSSODescriptor{
-			XMLName:                    xml.Name{},
-			ProtocolSupportEnumeration: "urn:oasis:names:tc:SAML:2.0:protocol",
-			KeyDescriptor: []KeyDescriptor{
-				{
-					Use: "signing",
-					KeyInfo: KeyInfo{
-						XMLName:     xml.Name{},
-						Certificate: "MIIB7zCCAVgCCQDFzbKIp7b3MTANBgkqhkiG9w0BAQUFADA8MQswCQYDVQQGEwJVUzELMAkGA1UECAwCR0ExDDAKBgNVBAoMA2ZvbzESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTEzMTAwMjAwMDg1MVoXDTE0MTAwMjAwMDg1MVowPDELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkdBMQwwCgYDVQQKDANmb28xEjAQBgNVBAMMCWxvY2FsaG9zdDCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA1PMHYmhZj308kWLhZVT4vOulqx/9ibm5B86fPWwUKKQ2i12MYtz07tzukPymisTDhQaqyJ8Kqb/6JjhmeMnEOdTvSPmHO8m1ZVveJU6NoKRn/mP/BD7FW52WhbrUXLSeHVSKfWkNk6S4hk9MV9TswTvyRIKvRsw0X/gfnqkroJcCAwEAATANBgkqhkiG9w0BAQUFAAOBgQCMMlIO+GNcGekevKgkakpMdAqJfs24maGb90DvTLbRZRD7Xvn1MnVBBS9hzlXiFLYOInXACMW5gcoRFfeTQLSouMM8o57h0uKjfTmuoWHLQLi6hnF+cvCsEFiJZ4AbF+DgmO6TarJ8O05t8zvnOwJlNCASPZRH/JmF8tX0hoHuAQ==",
+		IDPSSODescriptors: []IDPSSODescriptor{
+			IDPSSODescriptor{
+				SSODescriptor: SSODescriptor{
+					RoleDescriptor: RoleDescriptor{
+						ProtocolSupportEnumeration: "urn:oasis:names:tc:SAML:2.0:protocol",
+						KeyDescriptors: []KeyDescriptor{
+							{
+								Use: "signing",
+								KeyInfo: KeyInfo{
+									XMLName:     xml.Name{},
+									Certificate: "MIIB7zCCAVgCCQDFzbKIp7b3MTANBgkqhkiG9w0BAQUFADA8MQswCQYDVQQGEwJVUzELMAkGA1UECAwCR0ExDDAKBgNVBAoMA2ZvbzESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTEzMTAwMjAwMDg1MVoXDTE0MTAwMjAwMDg1MVowPDELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkdBMQwwCgYDVQQKDANmb28xEjAQBgNVBAMMCWxvY2FsaG9zdDCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA1PMHYmhZj308kWLhZVT4vOulqx/9ibm5B86fPWwUKKQ2i12MYtz07tzukPymisTDhQaqyJ8Kqb/6JjhmeMnEOdTvSPmHO8m1ZVveJU6NoKRn/mP/BD7FW52WhbrUXLSeHVSKfWkNk6S4hk9MV9TswTvyRIKvRsw0X/gfnqkroJcCAwEAATANBgkqhkiG9w0BAQUFAAOBgQCMMlIO+GNcGekevKgkakpMdAqJfs24maGb90DvTLbRZRD7Xvn1MnVBBS9hzlXiFLYOInXACMW5gcoRFfeTQLSouMM8o57h0uKjfTmuoWHLQLi6hnF+cvCsEFiJZ4AbF+DgmO6TarJ8O05t8zvnOwJlNCASPZRH/JmF8tX0hoHuAQ==",
+								},
+								EncryptionMethods: nil,
+							},
+							{
+								Use: "encryption",
+								KeyInfo: KeyInfo{
+									XMLName:     xml.Name{},
+									Certificate: "MIIB7zCCAVgCCQDFzbKIp7b3MTANBgkqhkiG9w0BAQUFADA8MQswCQYDVQQGEwJVUzELMAkGA1UECAwCR0ExDDAKBgNVBAoMA2ZvbzESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTEzMTAwMjAwMDg1MVoXDTE0MTAwMjAwMDg1MVowPDELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkdBMQwwCgYDVQQKDANmb28xEjAQBgNVBAMMCWxvY2FsaG9zdDCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA1PMHYmhZj308kWLhZVT4vOulqx/9ibm5B86fPWwUKKQ2i12MYtz07tzukPymisTDhQaqyJ8Kqb/6JjhmeMnEOdTvSPmHO8m1ZVveJU6NoKRn/mP/BD7FW52WhbrUXLSeHVSKfWkNk6S4hk9MV9TswTvyRIKvRsw0X/gfnqkroJcCAwEAATANBgkqhkiG9w0BAQUFAAOBgQCMMlIO+GNcGekevKgkakpMdAqJfs24maGb90DvTLbRZRD7Xvn1MnVBBS9hzlXiFLYOInXACMW5gcoRFfeTQLSouMM8o57h0uKjfTmuoWHLQLi6hnF+cvCsEFiJZ4AbF+DgmO6TarJ8O05t8zvnOwJlNCASPZRH/JmF8tX0hoHuAQ==",
+								},
+								EncryptionMethods: []EncryptionMethod{
+									{Algorithm: "http://www.w3.org/2001/04/xmlenc#aes128-cbc"},
+									{Algorithm: "http://www.w3.org/2001/04/xmlenc#aes192-cbc"},
+									{Algorithm: "http://www.w3.org/2001/04/xmlenc#aes256-cbc"},
+									{Algorithm: "http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p"},
+								},
+							},
+						},
 					},
-					EncryptionMethods: nil,
+					NameIDFormats: []NameIDFormat{NameIDFormat("urn:oasis:names:tc:SAML:2.0:nameid-format:transient")},
 				},
-				{
-					Use: "encryption",
-					KeyInfo: KeyInfo{
-						XMLName:     xml.Name{},
-						Certificate: "MIIB7zCCAVgCCQDFzbKIp7b3MTANBgkqhkiG9w0BAQUFADA8MQswCQYDVQQGEwJVUzELMAkGA1UECAwCR0ExDDAKBgNVBAoMA2ZvbzESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTEzMTAwMjAwMDg1MVoXDTE0MTAwMjAwMDg1MVowPDELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkdBMQwwCgYDVQQKDANmb28xEjAQBgNVBAMMCWxvY2FsaG9zdDCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA1PMHYmhZj308kWLhZVT4vOulqx/9ibm5B86fPWwUKKQ2i12MYtz07tzukPymisTDhQaqyJ8Kqb/6JjhmeMnEOdTvSPmHO8m1ZVveJU6NoKRn/mP/BD7FW52WhbrUXLSeHVSKfWkNk6S4hk9MV9TswTvyRIKvRsw0X/gfnqkroJcCAwEAATANBgkqhkiG9w0BAQUFAAOBgQCMMlIO+GNcGekevKgkakpMdAqJfs24maGb90DvTLbRZRD7Xvn1MnVBBS9hzlXiFLYOInXACMW5gcoRFfeTQLSouMM8o57h0uKjfTmuoWHLQLi6hnF+cvCsEFiJZ4AbF+DgmO6TarJ8O05t8zvnOwJlNCASPZRH/JmF8tX0hoHuAQ==",
+				SingleSignOnServices: []SingleSignOnService{
+					SingleSignOnService{
+						Binding:  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect",
+						Location: "https://idp.example.com/saml/sso",
 					},
-					EncryptionMethods: []EncryptionMethod{
-						{Algorithm: "http://www.w3.org/2001/04/xmlenc#aes128-cbc"},
-						{Algorithm: "http://www.w3.org/2001/04/xmlenc#aes192-cbc"},
-						{Algorithm: "http://www.w3.org/2001/04/xmlenc#aes256-cbc"},
-						{Algorithm: "http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p"},
+					SingleSignOnService{
+						Binding:  "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST",
+						Location: "https://idp.example.com/saml/sso",
 					},
 				},
-			},
-			NameIDFormat: []string{"urn:oasis:names:tc:SAML:2.0:nameid-format:transient"},
-			SingleSignOnService: []Endpoint{
-				{Binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect", Location: "https://idp.example.com/saml/sso", ResponseLocation: ""},
-				{Binding: "urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST", Location: "https://idp.example.com/saml/sso", ResponseLocation: ""},
 			},
 		},
 	})
@@ -240,14 +251,15 @@ func (test *IdentityProviderTest) TestCanHandleRequestWithNewSession(c *C) {
 
 	decodedRequest, err := testsaml.ParseRedirectRequest(requestURL)
 	c.Assert(err, IsNil)
-	c.Assert(string(decodedRequest), Equals, "<AuthnRequest xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\" IssueInstant=\"2015-12-01T01:57:09Z\" AssertionConsumerServiceURL=\"https://sp.example.com/saml2/acs\" Destination=\"https://idp.example.com/saml/sso\" ID=\"id-00020406080a0c0e10121416181a1c1e20222426\" ProtocolBinding=\"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST\" Version=\"2.0\"><Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">https://sp.example.com/saml2/metadata</Issuer><NameIDPolicy xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\" AllowCreate=\"true\">urn:oasis:names:tc:SAML:2.0:nameid-format:transient</NameIDPolicy></AuthnRequest>")
+	c.Assert(string(decodedRequest), Equals, "<samlp:AuthnRequest xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" ID=\"id-00020406080a0c0e10121416181a1c1e20222426\" Version=\"2.0\" IssueInstant=\"2015-12-01T01:57:09Z\" Destination=\"https://idp.example.com/saml/sso\" AssertionConsumerServiceURL=\"https://sp.example.com/saml2/acs\" ProtocolBinding=\"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST\"><saml:Issuer Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">https://sp.example.com/saml2/metadata</saml:Issuer><samlp:NameIDPolicy Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:transient\" AllowCreate=\"true\"/></samlp:AuthnRequest>")
 	c.Assert(requestURL.Query().Get("RelayState"), Equals, "ThisIsTheRelayState")
 
 	r, _ := http.NewRequest("GET", requestURL.String(), nil)
 	test.IDP.ServeSSO(w, r)
 	c.Assert(w.Code, Equals, 200)
 	c.Assert(string(w.Body.Bytes()), Equals, ""+
-		"RelayState: ThisIsTheRelayState\nSAMLRequest: <AuthnRequest xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\" IssueInstant=\"2015-12-01T01:57:09Z\" AssertionConsumerServiceURL=\"https://sp.example.com/saml2/acs\" Destination=\"https://idp.example.com/saml/sso\" ID=\"id-00020406080a0c0e10121416181a1c1e20222426\" ProtocolBinding=\"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST\" Version=\"2.0\"><Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">https://sp.example.com/saml2/metadata</Issuer><NameIDPolicy xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\" AllowCreate=\"true\">urn:oasis:names:tc:SAML:2.0:nameid-format:transient</NameIDPolicy></AuthnRequest>")
+		"RelayState: ThisIsTheRelayState\n"+
+		"SAMLRequest: <samlp:AuthnRequest xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" ID=\"id-00020406080a0c0e10121416181a1c1e20222426\" Version=\"2.0\" IssueInstant=\"2015-12-01T01:57:09Z\" Destination=\"https://idp.example.com/saml/sso\" AssertionConsumerServiceURL=\"https://sp.example.com/saml2/acs\" ProtocolBinding=\"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST\"><saml:Issuer Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">https://sp.example.com/saml2/metadata</saml:Issuer><samlp:NameIDPolicy Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:transient\" AllowCreate=\"true\"/></samlp:AuthnRequest>")
 }
 
 func (test *IdentityProviderTest) TestCanHandleRequestWithExistingSession(c *C) {
@@ -266,7 +278,7 @@ func (test *IdentityProviderTest) TestCanHandleRequestWithExistingSession(c *C) 
 
 	decodedRequest, err := testsaml.ParseRedirectRequest(requestURL)
 	c.Assert(err, IsNil)
-	c.Assert(string(decodedRequest), Equals, "<AuthnRequest xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\" IssueInstant=\"2015-12-01T01:57:09Z\" AssertionConsumerServiceURL=\"https://sp.example.com/saml2/acs\" Destination=\"https://idp.example.com/saml/sso\" ID=\"id-00020406080a0c0e10121416181a1c1e20222426\" ProtocolBinding=\"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST\" Version=\"2.0\"><Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">https://sp.example.com/saml2/metadata</Issuer><NameIDPolicy xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\" AllowCreate=\"true\">urn:oasis:names:tc:SAML:2.0:nameid-format:transient</NameIDPolicy></AuthnRequest>")
+	c.Assert(string(decodedRequest), Equals, "<samlp:AuthnRequest xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" ID=\"id-00020406080a0c0e10121416181a1c1e20222426\" Version=\"2.0\" IssueInstant=\"2015-12-01T01:57:09Z\" Destination=\"https://idp.example.com/saml/sso\" AssertionConsumerServiceURL=\"https://sp.example.com/saml2/acs\" ProtocolBinding=\"urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST\"><saml:Issuer Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">https://sp.example.com/saml2/metadata</saml:Issuer><samlp:NameIDPolicy Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:transient\" AllowCreate=\"true\"/></samlp:AuthnRequest>")
 
 	r, _ := http.NewRequest("GET", requestURL.String(), nil)
 	test.IDP.ServeSSO(w, r)
@@ -457,7 +469,7 @@ func (test *IdentityProviderTest) TestCanValidate(c *C) {
 			"    AllowCreate=\"true\">urn:oasis:names:tc:SAML:2.0:nameid-format:transient</NameIDPolicy>" +
 			"</AuthnRequest>"),
 	}
-	c.Assert(req.Validate(), ErrorMatches, "invalid ACS url specified in request: https://unknown.example.com/saml2/acs")
+	c.Assert(req.Validate(), ErrorMatches, "cannot find assertion consumer service: file does not exist")
 
 }
 
@@ -491,48 +503,56 @@ func (test *IdentityProviderTest) TestMakeAssertion(c *C) {
 		ID:           "id-00020406080a0c0e10121416181a1c1e20222426",
 		IssueInstant: TimeNow(),
 		Version:      "2.0",
-		Issuer: &Issuer{
+		Issuer: Issuer{
 			Format: "XXX",
 			Value:  "https://idp.example.com/saml/metadata",
 		},
 		Signature: nil,
 		Subject: &Subject{
 			NameID: &NameID{Format: "urn:oasis:names:tc:SAML:2.0:nameid-format:transient", NameQualifier: "https://idp.example.com/saml/metadata", SPNameQualifier: "https://sp.example.com/saml2/metadata", Value: ""},
-			SubjectConfirmation: &SubjectConfirmation{
-				Method: "urn:oasis:names:tc:SAML:2.0:cm:bearer",
-				SubjectConfirmationData: SubjectConfirmationData{
-					Address:      "",
-					InResponseTo: "id-00020406080a0c0e10121416181a1c1e",
-					NotOnOrAfter: TimeNow().Add(MaxIssueDelay),
-					Recipient:    "https://sp.example.com/saml2/acs",
+			SubjectConfirmations: []SubjectConfirmation{
+				SubjectConfirmation{
+					Method: "urn:oasis:names:tc:SAML:2.0:cm:bearer",
+					SubjectConfirmationData: &SubjectConfirmationData{
+						Address:      "",
+						InResponseTo: "id-00020406080a0c0e10121416181a1c1e",
+						NotOnOrAfter: TimeNow().Add(MaxIssueDelay),
+						Recipient:    "https://sp.example.com/saml2/acs",
+					},
 				},
 			},
 		},
 		Conditions: &Conditions{
 			NotBefore:    TimeNow(),
 			NotOnOrAfter: TimeNow().Add(MaxIssueDelay),
-			AudienceRestriction: &AudienceRestriction{
-				Audience: &Audience{Value: "https://sp.example.com/saml2/metadata"},
+			AudienceRestrictions: []AudienceRestriction{
+				AudienceRestriction{
+					Audience: Audience{Value: "https://sp.example.com/saml2/metadata"},
+				},
 			},
 		},
-		AuthnStatement: &AuthnStatement{
-			AuthnInstant:    time.Time{},
-			SessionIndex:    "",
-			SubjectLocality: SubjectLocality{},
-			AuthnContext: AuthnContext{
-				AuthnContextClassRef: &AuthnContextClassRef{Value: "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport"},
+		AuthnStatements: []AuthnStatement{
+			AuthnStatement{
+				AuthnInstant:    time.Time{},
+				SessionIndex:    "",
+				SubjectLocality: &SubjectLocality{},
+				AuthnContext: AuthnContext{
+					AuthnContextClassRef: &AuthnContextClassRef{Value: "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport"},
+				},
 			},
 		},
-		AttributeStatement: &AttributeStatement{
-			Attributes: []Attribute{
-				{
-					FriendlyName: "uid",
-					Name:         "urn:oid:0.9.2342.19200300.100.1.1",
-					NameFormat:   "urn:oasis:names:tc:SAML:2.0:attrname-format:uri",
-					Values: []AttributeValue{
-						{
-							Type:  "xs:string",
-							Value: "alice",
+		AttributeStatements: []AttributeStatement{
+			AttributeStatement{
+				Attributes: []Attribute{
+					{
+						FriendlyName: "uid",
+						Name:         "urn:oid:0.9.2342.19200300.100.1.1",
+						NameFormat:   "urn:oasis:names:tc:SAML:2.0:attrname-format:uri",
+						Values: []AttributeValue{
+							{
+								Type:  "xs:string",
+								Value: "alice",
+							},
 						},
 					},
 				},
@@ -554,7 +574,7 @@ func (test *IdentityProviderTest) TestMakeAssertion(c *C) {
 	})
 	c.Assert(err, IsNil)
 
-	c.Assert(req.Assertion.AttributeStatement.Attributes, DeepEquals, []Attribute{
+	c.Assert(req.Assertion.AttributeStatements[0].Attributes, DeepEquals, []Attribute{
 		{
 			FriendlyName: "uid",
 			Name:         "urn:oid:0.9.2342.19200300.100.1.1",
@@ -660,7 +680,7 @@ func (test *IdentityProviderTest) TestMarshalAssertion(c *C) {
 	c.Assert(err, IsNil)
 
 	// Compare the plaintext first
-	expectedPlaintext := "<Assertion xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"id-00020406080a0c0e10121416181a1c1e20222426\" IssueInstant=\"2015-12-01T01:57:09Z\" Version=\"2.0\"><Issuer Format=\"XXX\">https://idp.example.com/saml/metadata</Issuer><Subject><NameID Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:transient\" NameQualifier=\"https://idp.example.com/saml/metadata\" SPNameQualifier=\"https://sp.example.com/saml2/metadata\"/><SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><SubjectConfirmationData Address=\"\" InResponseTo=\"id-00020406080a0c0e10121416181a1c1e\" NotOnOrAfter=\"2015-12-01T01:58:39Z\" Recipient=\"https://sp.example.com/saml2/acs\"/></SubjectConfirmation></Subject><Conditions NotBefore=\"2015-12-01T01:57:09Z\" NotOnOrAfter=\"2015-12-01T01:58:39Z\"><AudienceRestriction><Audience>https://sp.example.com/saml2/metadata</Audience></AudienceRestriction></Conditions><AuthnStatement AuthnInstant=\"0001-01-01T00:00:00Z\" SessionIndex=\"\"><SubjectLocality Address=\"\"/><AuthnContext><AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</AuthnContextClassRef></AuthnContext></AuthnStatement><AttributeStatement><Attribute FriendlyName=\"uid\" Name=\"urn:oid:0.9.2342.19200300.100.1.1\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:uri\"><AttributeValue xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">alice</AttributeValue></Attribute></AttributeStatement><ds:Signature xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm=\"http://www.w3.org/2001/10/xml-exc-c14n#\"/><ds:SignatureMethod Algorithm=\"http://www.w3.org/2000/09/xmldsig#rsa-sha1\"/><ds:Reference URI=\"#id-00020406080a0c0e10121416181a1c1e20222426\"><ds:Transforms><ds:Transform Algorithm=\"http://www.w3.org/2000/09/xmldsig#enveloped-signature\"/><ds:Transform Algorithm=\"http://www.w3.org/2001/10/xml-exc-c14n#\"/></ds:Transforms><ds:DigestMethod Algorithm=\"http://www.w3.org/2000/09/xmldsig#sha1\"/><ds:DigestValue>uXNBKJoWgXBWfBBbuoSFavgodGY=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue>JRUgEvUIZNJzSneaDMNzGLXRJQTMAPRmeKurC79CQDr5YBWG1eCLbXCWcJbdy8V2ZXAyGvz2A/VsFSs6w4sZzm5FckcFs11vgfsULhYB+wuppZMGkW/jtpD8xWKhLI7zwwJ+TAnbmRmKGs1D+zJSW589NsnlFxQii/Uu89DzZO8=</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIB7zCCAVgCCQDFzbKIp7b3MTANBgkqhkiG9w0BAQUFADA8MQswCQYDVQQGEwJVUzELMAkGA1UECAwCR0ExDDAKBgNVBAoMA2ZvbzESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTEzMTAwMjAwMDg1MVoXDTE0MTAwMjAwMDg1MVowPDELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkdBMQwwCgYDVQQKDANmb28xEjAQBgNVBAMMCWxvY2FsaG9zdDCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA1PMHYmhZj308kWLhZVT4vOulqx/9ibm5B86fPWwUKKQ2i12MYtz07tzukPymisTDhQaqyJ8Kqb/6JjhmeMnEOdTvSPmHO8m1ZVveJU6NoKRn/mP/BD7FW52WhbrUXLSeHVSKfWkNk6S4hk9MV9TswTvyRIKvRsw0X/gfnqkroJcCAwEAATANBgkqhkiG9w0BAQUFAAOBgQCMMlIO+GNcGekevKgkakpMdAqJfs24maGb90DvTLbRZRD7Xvn1MnVBBS9hzlXiFLYOInXACMW5gcoRFfeTQLSouMM8o57h0uKjfTmuoWHLQLi6hnF+cvCsEFiJZ4AbF+DgmO6TarJ8O05t8zvnOwJlNCASPZRH/JmF8tX0hoHuAQ==</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature></Assertion>"
+	expectedPlaintext := "<saml:Assertion xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"id-00020406080a0c0e10121416181a1c1e20222426\" IssueInstant=\"2015-12-01T01:57:09Z\" Version=\"2.0\"><saml:Issuer Format=\"XXX\">https://idp.example.com/saml/metadata</saml:Issuer><ds:Signature xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\"><ds:SignedInfo><ds:CanonicalizationMethod Algorithm=\"http://www.w3.org/2001/10/xml-exc-c14n#\"/><ds:SignatureMethod Algorithm=\"http://www.w3.org/2000/09/xmldsig#rsa-sha1\"/><ds:Reference URI=\"#id-00020406080a0c0e10121416181a1c1e20222426\"><ds:Transforms><ds:Transform Algorithm=\"http://www.w3.org/2000/09/xmldsig#enveloped-signature\"/><ds:Transform Algorithm=\"http://www.w3.org/2001/10/xml-exc-c14n#\"/></ds:Transforms><ds:DigestMethod Algorithm=\"http://www.w3.org/2000/09/xmldsig#sha1\"/><ds:DigestValue>1vtgtflZQphWGGqXh0fZSitc1m4=</ds:DigestValue></ds:Reference></ds:SignedInfo><ds:SignatureValue>zhRNk0gd7EHGQ9ZLHsiHYunopXKXF3JLw8Ou11SKy914IXI4hisqTbrRLIJOtz6WbA9jeFeDOxlclp/512TY8/LDfCntZGeTece21XtOqYg5ZtFLaFoR+R5VoFsVG9Wvw2Z6KQQOvE13+uhHjBcnkz511ook6wxRUGjh6RCYHyQ=</ds:SignatureValue><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIB7zCCAVgCCQDFzbKIp7b3MTANBgkqhkiG9w0BAQUFADA8MQswCQYDVQQGEwJVUzELMAkGA1UECAwCR0ExDDAKBgNVBAoMA2ZvbzESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTEzMTAwMjAwMDg1MVoXDTE0MTAwMjAwMDg1MVowPDELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkdBMQwwCgYDVQQKDANmb28xEjAQBgNVBAMMCWxvY2FsaG9zdDCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA1PMHYmhZj308kWLhZVT4vOulqx/9ibm5B86fPWwUKKQ2i12MYtz07tzukPymisTDhQaqyJ8Kqb/6JjhmeMnEOdTvSPmHO8m1ZVveJU6NoKRn/mP/BD7FW52WhbrUXLSeHVSKfWkNk6S4hk9MV9TswTvyRIKvRsw0X/gfnqkroJcCAwEAATANBgkqhkiG9w0BAQUFAAOBgQCMMlIO+GNcGekevKgkakpMdAqJfs24maGb90DvTLbRZRD7Xvn1MnVBBS9hzlXiFLYOInXACMW5gcoRFfeTQLSouMM8o57h0uKjfTmuoWHLQLi6hnF+cvCsEFiJZ4AbF+DgmO6TarJ8O05t8zvnOwJlNCASPZRH/JmF8tX0hoHuAQ==</ds:X509Certificate></ds:X509Data></ds:KeyInfo></ds:Signature><saml:Subject><saml:NameID Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:transient\" NameQualifier=\"https://idp.example.com/saml/metadata\" SPNameQualifier=\"https://sp.example.com/saml2/metadata\"/><saml:SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\"><saml:SubjectConfirmationData InResponseTo=\"id-00020406080a0c0e10121416181a1c1e\" NotOnOrAfter=\"2015-12-01T01:58:39Z\" Recipient=\"https://sp.example.com/saml2/acs\"/></saml:SubjectConfirmation></saml:Subject><saml:Conditions NotBefore=\"2015-12-01T01:57:09Z\" NotOnOrAfter=\"2015-12-01T01:58:39Z\"><saml:AudienceRestriction><saml:Audience>https://sp.example.com/saml2/metadata</saml:Audience></saml:AudienceRestriction></saml:Conditions><saml:AuthnStatement AuthnInstant=\"0001-01-01T00:00:00Z\"><saml:SubjectLocality/><saml:AuthnContext><saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</saml:AuthnContextClassRef></saml:AuthnContext></saml:AuthnStatement><saml:AttributeStatement><saml:Attribute FriendlyName=\"uid\" Name=\"urn:oid:0.9.2342.19200300.100.1.1\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:uri\"><saml:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">alice</saml:AttributeValue></saml:Attribute></saml:AttributeStatement></saml:Assertion>"
 	actualPlaintext := ""
 	{
 		doc := etree.NewDocument()
@@ -676,7 +696,7 @@ func (test *IdentityProviderTest) TestMarshalAssertion(c *C) {
 	doc.SetRoot(req.AssertionEl)
 	assertionBuffer, err := doc.WriteToBytes()
 	c.Assert(err, IsNil)
-	c.Assert(string(assertionBuffer), Equals, "<saml2:EncryptedAssertion xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:protocol\"><xenc:EncryptedData xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\" Id=\"_e285ece1511455780875d64ee2d3d0d0\" Type=\"http://www.w3.org/2001/04/xmlenc#Element\"><xenc:EncryptionMethod Algorithm=\"http://www.w3.org/2001/04/xmlenc#aes128-cbc\" xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"/><ds:KeyInfo xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\"><xenc:EncryptedKey Id=\"_6e4ff95ff662a5eee82abdf44a2d0b75\" xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"><xenc:EncryptionMethod Algorithm=\"http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p\" xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"><ds:DigestMethod Algorithm=\"http://www.w3.org/2000/09/xmldsig#sha1\" xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\"/></xenc:EncryptionMethod><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIB7zCCAVgCCQDFzbKIp7b3MTANBgkqhkiG9w0BAQUFADA8MQswCQYDVQQGEwJVUzELMAkGA1UECAwCR0ExDDAKBgNVBAoMA2ZvbzESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTEzMTAwMjAwMDg1MVoXDTE0MTAwMjAwMDg1MVowPDELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkdBMQwwCgYDVQQKDANmb28xEjAQBgNVBAMMCWxvY2FsaG9zdDCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA1PMHYmhZj308kWLhZVT4vOulqx/9ibm5B86fPWwUKKQ2i12MYtz07tzukPymisTDhQaqyJ8Kqb/6JjhmeMnEOdTvSPmHO8m1ZVveJU6NoKRn/mP/BD7FW52WhbrUXLSeHVSKfWkNk6S4hk9MV9TswTvyRIKvRsw0X/gfnqkroJcCAwEAATANBgkqhkiG9w0BAQUFAAOBgQCMMlIO+GNcGekevKgkakpMdAqJfs24maGb90DvTLbRZRD7Xvn1MnVBBS9hzlXiFLYOInXACMW5gcoRFfeTQLSouMM8o57h0uKjfTmuoWHLQLi6hnF+cvCsEFiJZ4AbF+DgmO6TarJ8O05t8zvnOwJlNCASPZRH/JmF8tX0hoHuAQ==</ds:X509Certificate></ds:X509Data></ds:KeyInfo><xenc:CipherData xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"><xenc:CipherValue>R9aHQv2U2ZZSuvRaL4/X8TXpm2/1so2IiOz/+NsAzEKoLAg8Sj87Nj5oMrYY2HF5DPQm/N/3+v6wOU9dX62spTzoSWocVzQU+GdTG2DiIIiAAvQwZo1FyUDKS1Fs5voWzgKvs8G43nj68147T96sXY9SyeUBBdhQtXRsEsmKiAs=</xenc:CipherValue></xenc:CipherData></xenc:EncryptedKey></ds:KeyInfo><xenc:CipherData xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"><xenc:CipherValue>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</xenc:CipherValue></xenc:CipherData></xenc:EncryptedData></saml2:EncryptedAssertion>")
+	c.Assert(string(assertionBuffer), Equals, "<saml2:EncryptedAssertion xmlns:saml2=\"urn:oasis:names:tc:SAML:2.0:protocol\"><xenc:EncryptedData xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\" Id=\"_e285ece1511455780875d64ee2d3d0d0\" Type=\"http://www.w3.org/2001/04/xmlenc#Element\"><xenc:EncryptionMethod Algorithm=\"http://www.w3.org/2001/04/xmlenc#aes128-cbc\" xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"/><ds:KeyInfo xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\"><xenc:EncryptedKey Id=\"_6e4ff95ff662a5eee82abdf44a2d0b75\" xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"><xenc:EncryptionMethod Algorithm=\"http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p\" xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"><ds:DigestMethod Algorithm=\"http://www.w3.org/2000/09/xmldsig#sha1\" xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\"/></xenc:EncryptionMethod><ds:KeyInfo><ds:X509Data><ds:X509Certificate>MIIB7zCCAVgCCQDFzbKIp7b3MTANBgkqhkiG9w0BAQUFADA8MQswCQYDVQQGEwJVUzELMAkGA1UECAwCR0ExDDAKBgNVBAoMA2ZvbzESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTEzMTAwMjAwMDg1MVoXDTE0MTAwMjAwMDg1MVowPDELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkdBMQwwCgYDVQQKDANmb28xEjAQBgNVBAMMCWxvY2FsaG9zdDCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA1PMHYmhZj308kWLhZVT4vOulqx/9ibm5B86fPWwUKKQ2i12MYtz07tzukPymisTDhQaqyJ8Kqb/6JjhmeMnEOdTvSPmHO8m1ZVveJU6NoKRn/mP/BD7FW52WhbrUXLSeHVSKfWkNk6S4hk9MV9TswTvyRIKvRsw0X/gfnqkroJcCAwEAATANBgkqhkiG9w0BAQUFAAOBgQCMMlIO+GNcGekevKgkakpMdAqJfs24maGb90DvTLbRZRD7Xvn1MnVBBS9hzlXiFLYOInXACMW5gcoRFfeTQLSouMM8o57h0uKjfTmuoWHLQLi6hnF+cvCsEFiJZ4AbF+DgmO6TarJ8O05t8zvnOwJlNCASPZRH/JmF8tX0hoHuAQ==</ds:X509Certificate></ds:X509Data></ds:KeyInfo><xenc:CipherData xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"><xenc:CipherValue>R9aHQv2U2ZZSuvRaL4/X8TXpm2/1so2IiOz/+NsAzEKoLAg8Sj87Nj5oMrYY2HF5DPQm/N/3+v6wOU9dX62spTzoSWocVzQU+GdTG2DiIIiAAvQwZo1FyUDKS1Fs5voWzgKvs8G43nj68147T96sXY9SyeUBBdhQtXRsEsmKiAs=</xenc:CipherValue></xenc:CipherData></xenc:EncryptedKey></ds:KeyInfo><xenc:CipherData xmlns:xenc=\"http://www.w3.org/2001/04/xmlenc#\"><xenc:CipherValue>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</xenc:CipherValue></xenc:CipherData></xenc:EncryptedData></saml2:EncryptedAssertion>")
 }
 
 func (test *IdentityProviderTest) TestMakeResponse(c *C) {
@@ -719,13 +739,13 @@ func (test *IdentityProviderTest) TestMakeResponse(c *C) {
 	doc.Indent(2)
 	responseStr, _ := doc.WriteToString()
 	c.Assert(responseStr, DeepEquals, ""+
-		"<Response xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\" IssueInstant=\"2015-12-01T01:57:09Z\" Destination=\"https://sp.example.com/saml2/acs\" ID=\"id-282a2c2e30323436383a3c3e40424446484a4c4e\" InResponseTo=\"id-00020406080a0c0e10121416181a1c1e\" Version=\"2.0\">\n"+
-		"  <Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">https://idp.example.com/saml/metadata</Issuer>\n"+
-		"  <Status xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\">\n"+
-		"    <StatusCode xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\" Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"/>\n"+
-		"  </Status>\n"+
+		"<samlp:Response xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" ID=\"id-282a2c2e30323436383a3c3e40424446484a4c4e\" InResponseTo=\"id-00020406080a0c0e10121416181a1c1e\" Version=\"2.0\" IssueInstant=\"2015-12-01T01:57:09Z\" Destination=\"https://sp.example.com/saml2/acs\">\n"+
+		"  <saml:Issuer Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">https://idp.example.com/saml/metadata</saml:Issuer>\n"+
+		"  <samlp:Status>\n"+
+		"    <samlp:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"/>\n"+
+		"  </samlp:Status>\n"+
 		"  <this-is-an-encrypted-assertion/>\n"+
-		"</Response>\n")
+		"</samlp:Response>\n")
 }
 
 func (test *IdentityProviderTest) TestWriteResponse(c *C) {
@@ -813,11 +833,11 @@ func (test *IdentityProviderTest) TestCanHandleUnencryptedResponse(c *C) {
 		},
 	}
 
-	metadata := Metadata{}
+	metadata := EntityDescriptor{}
 	err := xml.Unmarshal([]byte(`<?xml version='1.0' encoding='UTF-8'?><md:EntityDescriptor ID='_97e2ce01-fa34-4c09-9126-4f7595ef6bf8' entityID='https://gitlab.example.com/users/auth/saml/metadata' xmlns:md='urn:oasis:names:tc:SAML:2.0:metadata' xmlns:saml='urn:oasis:names:tc:SAML:2.0:assertion'><md:SPSSODescriptor AuthnRequestsSigned='false' WantAssertionsSigned='false' protocolSupportEnumeration='urn:oasis:names:tc:SAML:2.0:protocol'><md:AssertionConsumerService Binding='urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST' Location='https://gitlab.example.com/users/auth/saml/callback' index='0' isDefault='true'/><md:AttributeConsumingService index='1' isDefault='true'><md:ServiceName xml:lang='en'>Required attributes</md:ServiceName><md:RequestedAttribute FriendlyName='Email address' Name='email' NameFormat='urn:oasis:names:tc:SAML:2.0:attrname-format:basic'/><md:RequestedAttribute FriendlyName='Full name' Name='name' NameFormat='urn:oasis:names:tc:SAML:2.0:attrname-format:basic'/><md:RequestedAttribute FriendlyName='Given name' Name='first_name' NameFormat='urn:oasis:names:tc:SAML:2.0:attrname-format:basic'/><md:RequestedAttribute FriendlyName='Family name' Name='last_name' NameFormat='urn:oasis:names:tc:SAML:2.0:attrname-format:basic'/></md:AttributeConsumingService></md:SPSSODescriptor></md:EntityDescriptor>`), &metadata)
 	c.Assert(err, IsNil)
 	test.IDP.ServiceProviderProvider = &mockServiceProviderProvider{
-		GetServiceProviderFunc: func(r *http.Request, serviceProviderID string) (*Metadata, error) {
+		GetServiceProviderFunc: func(r *http.Request, serviceProviderID string) (*EntityDescriptor, error) {
 			if serviceProviderID == "https://gitlab.example.com/users/saml/metadata" {
 				return &metadata, nil
 			}
@@ -857,35 +877,13 @@ func (test *IdentityProviderTest) TestCanHandleUnencryptedResponse(c *C) {
 	doc.Indent(2)
 	responseStr, _ := doc.WriteToString()
 	c.Assert(responseStr, DeepEquals, ""+
-		"<Response xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\" IssueInstant=\"2015-12-01T01:57:09Z\" Destination=\"https://gitlab.example.com/users/auth/saml/callback\" ID=\"id-282a2c2e30323436383a3c3e40424446484a4c4e\" InResponseTo=\"id-00020406080a0c0e10121416181a1c1e\" Version=\"2.0\">\n"+
-		"  <Issuer xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">https://idp.example.com/saml/metadata</Issuer>\n"+
-		"  <Status xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\">\n"+
-		"    <StatusCode xmlns=\"urn:oasis:names:tc:SAML:2.0:protocol\" Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"/>\n"+
-		"  </Status>\n"+
-		"  <Assertion xmlns=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"id-00020406080a0c0e10121416181a1c1e20222426\" IssueInstant=\"2015-12-01T01:57:09Z\" Version=\"2.0\">\n"+
-		"    <Issuer Format=\"XXX\">https://idp.example.com/saml/metadata</Issuer>\n"+
-		"    <Subject>\n"+
-		"      <NameID Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:transient\" NameQualifier=\"https://idp.example.com/saml/metadata\" SPNameQualifier=\"https://gitlab.example.com/users/auth/saml/metadata\"/>\n"+
-		"      <SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\">\n"+
-		"        <SubjectConfirmationData Address=\"\" InResponseTo=\"id-00020406080a0c0e10121416181a1c1e\" NotOnOrAfter=\"2015-12-01T01:58:39Z\" Recipient=\"https://gitlab.example.com/users/auth/saml/callback\"/>\n"+
-		"      </SubjectConfirmation>\n"+
-		"    </Subject>\n"+
-		"    <Conditions NotBefore=\"2015-12-01T01:57:09Z\" NotOnOrAfter=\"2015-12-01T01:58:39Z\">\n"+
-		"      <AudienceRestriction>\n"+
-		"        <Audience>https://gitlab.example.com/users/auth/saml/metadata</Audience>\n"+
-		"      </AudienceRestriction>\n"+
-		"    </Conditions>\n"+
-		"    <AuthnStatement AuthnInstant=\"0001-01-01T00:00:00Z\" SessionIndex=\"\">\n"+
-		"      <SubjectLocality Address=\"\"/>\n"+
-		"      <AuthnContext>\n"+
-		"        <AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</AuthnContextClassRef>\n"+
-		"      </AuthnContext>\n"+
-		"    </AuthnStatement>\n"+
-		"    <AttributeStatement>\n"+
-		"      <Attribute FriendlyName=\"uid\" Name=\"urn:oid:0.9.2342.19200300.100.1.1\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:uri\">\n"+
-		"        <AttributeValue xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">alice</AttributeValue>\n"+
-		"      </Attribute>\n"+
-		"    </AttributeStatement>\n"+
+		"<samlp:Response xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" xmlns:samlp=\"urn:oasis:names:tc:SAML:2.0:protocol\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" ID=\"id-282a2c2e30323436383a3c3e40424446484a4c4e\" InResponseTo=\"id-00020406080a0c0e10121416181a1c1e\" Version=\"2.0\" IssueInstant=\"2015-12-01T01:57:09Z\" Destination=\"https://gitlab.example.com/users/auth/saml/callback\">\n"+
+		"  <saml:Issuer Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:entity\">https://idp.example.com/saml/metadata</saml:Issuer>\n"+
+		"  <samlp:Status>\n"+
+		"    <samlp:StatusCode Value=\"urn:oasis:names:tc:SAML:2.0:status:Success\"/>\n"+
+		"  </samlp:Status>\n"+
+		"  <saml:Assertion xmlns:saml=\"urn:oasis:names:tc:SAML:2.0:assertion\" ID=\"id-00020406080a0c0e10121416181a1c1e20222426\" IssueInstant=\"2015-12-01T01:57:09Z\" Version=\"2.0\">\n"+
+		"    <saml:Issuer Format=\"XXX\">https://idp.example.com/saml/metadata</saml:Issuer>\n"+
 		"    <ds:Signature xmlns:ds=\"http://www.w3.org/2000/09/xmldsig#\">\n"+
 		"      <ds:SignedInfo>\n"+
 		"        <ds:CanonicalizationMethod Algorithm=\"http://www.w3.org/2001/10/xml-exc-c14n#\"/>\n"+
@@ -896,16 +894,38 @@ func (test *IdentityProviderTest) TestCanHandleUnencryptedResponse(c *C) {
 		"            <ds:Transform Algorithm=\"http://www.w3.org/2001/10/xml-exc-c14n#\"/>\n"+
 		"          </ds:Transforms>\n"+
 		"          <ds:DigestMethod Algorithm=\"http://www.w3.org/2000/09/xmldsig#sha1\"/>\n"+
-		"          <ds:DigestValue>1Hn/ZGHqK2uWQgsx7tEV9HVTic0=</ds:DigestValue>\n"+
+		"          <ds:DigestValue>qSDIhUMlHsUKTwUAiMaR9b2QjfE=</ds:DigestValue>\n"+
 		"        </ds:Reference>\n"+
 		"      </ds:SignedInfo>\n"+
-		"      <ds:SignatureValue>LJmHvCeJeczXNEXCK5QcmhPUwpdv5IzLNyA7JYK/HjVbet3Rfq7l0JEeqaPuGuksEFXHx9lfcXt2mClTDB3x/RoByIvopP/2bkN+LZ5ce3RuRyleIz0UazTnU4NCy2Xr46FGGOV+R0nHuFDp3wr6bShAURFzEeluaAguWFva/Xg=</ds:SignatureValue>\n"+
+		"      <ds:SignatureValue>v6ACJuOxmgtrHaLA5OAtecmreXk0PZ3derYalKYgvdtRnnJZyqgLZtDdtxLfkxVwVrLp1p8hMmPyZaqXtH10UfMlndcztYP7I/Kq2LGCjJ3wcTFA/bp23riGoFHwcJi58+G3uIa3kQE9gzHY0aQozbrs3xkNyeV7uMlAIhKjaSs=</ds:SignatureValue>\n"+
 		"      <ds:KeyInfo>\n"+
 		"        <ds:X509Data>\n"+
 		"          <ds:X509Certificate>MIIB7zCCAVgCCQDFzbKIp7b3MTANBgkqhkiG9w0BAQUFADA8MQswCQYDVQQGEwJVUzELMAkGA1UECAwCR0ExDDAKBgNVBAoMA2ZvbzESMBAGA1UEAwwJbG9jYWxob3N0MB4XDTEzMTAwMjAwMDg1MVoXDTE0MTAwMjAwMDg1MVowPDELMAkGA1UEBhMCVVMxCzAJBgNVBAgMAkdBMQwwCgYDVQQKDANmb28xEjAQBgNVBAMMCWxvY2FsaG9zdDCBnzANBgkqhkiG9w0BAQEFAAOBjQAwgYkCgYEA1PMHYmhZj308kWLhZVT4vOulqx/9ibm5B86fPWwUKKQ2i12MYtz07tzukPymisTDhQaqyJ8Kqb/6JjhmeMnEOdTvSPmHO8m1ZVveJU6NoKRn/mP/BD7FW52WhbrUXLSeHVSKfWkNk6S4hk9MV9TswTvyRIKvRsw0X/gfnqkroJcCAwEAATANBgkqhkiG9w0BAQUFAAOBgQCMMlIO+GNcGekevKgkakpMdAqJfs24maGb90DvTLbRZRD7Xvn1MnVBBS9hzlXiFLYOInXACMW5gcoRFfeTQLSouMM8o57h0uKjfTmuoWHLQLi6hnF+cvCsEFiJZ4AbF+DgmO6TarJ8O05t8zvnOwJlNCASPZRH/JmF8tX0hoHuAQ==</ds:X509Certificate>\n"+
 		"        </ds:X509Data>\n"+
 		"      </ds:KeyInfo>\n"+
 		"    </ds:Signature>\n"+
-		"  </Assertion>\n"+
-		"</Response>\n")
+		"    <saml:Subject>\n"+
+		"      <saml:NameID Format=\"urn:oasis:names:tc:SAML:2.0:nameid-format:transient\" NameQualifier=\"https://idp.example.com/saml/metadata\" SPNameQualifier=\"https://gitlab.example.com/users/auth/saml/metadata\"/>\n"+
+		"      <saml:SubjectConfirmation Method=\"urn:oasis:names:tc:SAML:2.0:cm:bearer\">\n"+
+		"        <saml:SubjectConfirmationData InResponseTo=\"id-00020406080a0c0e10121416181a1c1e\" NotOnOrAfter=\"2015-12-01T01:58:39Z\" Recipient=\"https://gitlab.example.com/users/auth/saml/callback\"/>\n"+
+		"      </saml:SubjectConfirmation>\n"+
+		"    </saml:Subject>\n"+
+		"    <saml:Conditions NotBefore=\"2015-12-01T01:57:09Z\" NotOnOrAfter=\"2015-12-01T01:58:39Z\">\n"+
+		"      <saml:AudienceRestriction>\n"+
+		"        <saml:Audience>https://gitlab.example.com/users/auth/saml/metadata</saml:Audience>\n"+
+		"      </saml:AudienceRestriction>\n"+
+		"    </saml:Conditions>\n"+
+		"    <saml:AuthnStatement AuthnInstant=\"0001-01-01T00:00:00Z\">\n"+
+		"      <saml:SubjectLocality/>\n"+
+		"      <saml:AuthnContext>\n"+
+		"        <saml:AuthnContextClassRef>urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport</saml:AuthnContextClassRef>\n"+
+		"      </saml:AuthnContext>\n"+
+		"    </saml:AuthnStatement>\n"+
+		"    <saml:AttributeStatement>\n"+
+		"      <saml:Attribute FriendlyName=\"uid\" Name=\"urn:oid:0.9.2342.19200300.100.1.1\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:uri\">\n"+
+		"        <saml:AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"xs:string\">alice</saml:AttributeValue>\n"+
+		"      </saml:Attribute>\n"+
+		"    </saml:AttributeStatement>\n"+
+		"  </saml:Assertion>\n"+
+		"</samlp:Response>\n")
 }

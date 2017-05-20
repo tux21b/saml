@@ -23,7 +23,7 @@ type Options struct {
 	Key               *rsa.PrivateKey
 	Certificate       *x509.Certificate
 	AllowIDPInitiated bool
-	IDPMetadata       *saml.Metadata
+	IDPMetadata       *saml.EntityDescriptor
 	IDPMetadataURL    *url.URL
 }
 
@@ -81,8 +81,7 @@ func New(opts Options) (*Middleware, error) {
 			continue
 		}
 
-		entity := &saml.Metadata{}
-
+		entity := &saml.EntityDescriptor{}
 		err = xml.Unmarshal(data, entity)
 
 		// this comparison is ugly, but it is how the error is generated in encoding/xml
@@ -93,9 +92,9 @@ func New(opts Options) (*Middleware, error) {
 			}
 
 			err = fmt.Errorf("no entity found with IDPSSODescriptor")
-			for _, e := range entities.EntityDescriptor {
-				if e.IDPSSODescriptor != nil {
-					entity = e
+			for _, e := range entities.EntityDescriptors {
+				if len(e.IDPSSODescriptors) > 0 {
+					entity = &e
 					err = nil
 				}
 			}

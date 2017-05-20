@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strconv"
 	"text/template"
 	"time"
 
@@ -60,7 +61,7 @@ type ServiceProviderProvider interface {
 	// service provider ID, which is typically the service provider's
 	// metadata URL. If an appropriate service provider cannot be found then
 	// the returned error must be os.ErrNotExist.
-	GetServiceProvider(r *http.Request, serviceProviderID string) (*Metadata, error)
+	GetServiceProvider(r *http.Request, serviceProviderID string) (*EntityDescriptor, error)
 }
 
 // IdentityProvider implements the SAML Identity Provider role (IDP).
@@ -87,46 +88,50 @@ type IdentityProvider struct {
 }
 
 // Metadata returns the metadata structure for this identity provider.
-func (idp *IdentityProvider) Metadata() *Metadata {
+func (idp *IdentityProvider) Metadata() *EntityDescriptor {
 	certStr := base64.StdEncoding.EncodeToString(idp.Certificate.Raw)
 
-	return &Metadata{
+	return &EntityDescriptor{
 		EntityID:      idp.MetadataURL.String(),
 		ValidUntil:    TimeNow().Add(DefaultValidDuration),
 		CacheDuration: DefaultValidDuration,
-		IDPSSODescriptor: &IDPSSODescriptor{
-			ProtocolSupportEnumeration: "urn:oasis:names:tc:SAML:2.0:protocol",
-			KeyDescriptor: []KeyDescriptor{
-				{
-					Use: "signing",
-					KeyInfo: KeyInfo{
-						Certificate: certStr,
+		IDPSSODescriptors: []IDPSSODescriptor{
+			IDPSSODescriptor{
+				SSODescriptor: SSODescriptor{
+					RoleDescriptor: RoleDescriptor{
+						ProtocolSupportEnumeration: "urn:oasis:names:tc:SAML:2.0:protocol",
+						KeyDescriptors: []KeyDescriptor{
+							{
+								Use: "signing",
+								KeyInfo: KeyInfo{
+									Certificate: certStr,
+								},
+							},
+							{
+								Use: "encryption",
+								KeyInfo: KeyInfo{
+									Certificate: certStr,
+								},
+								EncryptionMethods: []EncryptionMethod{
+									{Algorithm: "http://www.w3.org/2001/04/xmlenc#aes128-cbc"},
+									{Algorithm: "http://www.w3.org/2001/04/xmlenc#aes192-cbc"},
+									{Algorithm: "http://www.w3.org/2001/04/xmlenc#aes256-cbc"},
+									{Algorithm: "http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p"},
+								},
+							},
+						},
 					},
+					NameIDFormats: []NameIDFormat{NameIDFormat("urn:oasis:names:tc:SAML:2.0:nameid-format:transient")},
 				},
-				{
-					Use: "encryption",
-					KeyInfo: KeyInfo{
-						Certificate: certStr,
+				SingleSignOnServices: []SingleSignOnService{
+					{
+						Binding:  HTTPRedirectBinding,
+						Location: idp.SSOURL.String(),
 					},
-					EncryptionMethods: []EncryptionMethod{
-						{Algorithm: "http://www.w3.org/2001/04/xmlenc#aes128-cbc"},
-						{Algorithm: "http://www.w3.org/2001/04/xmlenc#aes192-cbc"},
-						{Algorithm: "http://www.w3.org/2001/04/xmlenc#aes256-cbc"},
-						{Algorithm: "http://www.w3.org/2001/04/xmlenc#rsa-oaep-mgf1p"},
+					{
+						Binding:  HTTPPostBinding,
+						Location: idp.SSOURL.String(),
 					},
-				},
-			},
-			NameIDFormat: []string{
-				"urn:oasis:names:tc:SAML:2.0:nameid-format:transient",
-			},
-			SingleSignOnService: []Endpoint{
-				{
-					Binding:  HTTPRedirectBinding,
-					Location: idp.SSOURL.String(),
-				},
-				{
-					Binding:  HTTPPostBinding,
-					Location: idp.SSOURL.String(),
 				},
 			},
 		},
@@ -230,9 +235,18 @@ func (idp *IdentityProvider) ServeIDPInitiated(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	for _, endpoint := range req.ServiceProviderMetadata.SPSSODescriptor.AssertionConsumerService {
-		req.ACSEndpoint = &endpoint
-		break
+	// find an ACS endpoint that we can use
+	for _, spssoDescriptor := range req.ServiceProviderMetadata.SPSSODescriptors {
+		for _, endpoint := range spssoDescriptor.AssertionConsumerServices {
+			if endpoint.Binding == HTTPPostBinding {
+				req.ACSEndpoint = &endpoint
+				req.SPSSODescriptor = &spssoDescriptor
+				break
+			}
+		}
+		if req.ACSEndpoint != nil {
+			break
+		}
 	}
 	if req.ACSEndpoint == nil {
 		log.Printf("saml metadata does not contain an Assertion Customer Service url")
@@ -260,7 +274,8 @@ type IdpAuthnRequest struct {
 	RelayState              string
 	RequestBuffer           []byte
 	Request                 AuthnRequest
-	ServiceProviderMetadata *Metadata
+	ServiceProviderMetadata *EntityDescriptor
+	SPSSODescriptor         *SPSSODescriptor
 	ACSEndpoint             *IndexedEndpoint
 	Assertion               *Assertion
 	AssertionEl             *etree.Element
@@ -334,19 +349,39 @@ func (req *IdpAuthnRequest) Validate() error {
 	req.ServiceProviderMetadata = serviceProvider
 
 	// Check that the ACS URL matches an ACS endpoint in the SP metadata.
-	acsValid := false
-	for _, acsEndpoint := range serviceProvider.SPSSODescriptor.AssertionConsumerService {
-		if req.Request.AssertionConsumerServiceURL == acsEndpoint.Location {
-			req.ACSEndpoint = &acsEndpoint
-			acsValid = true
-			break
-		}
-	}
-	if !acsValid {
-		return fmt.Errorf("invalid ACS url specified in request: %s", req.Request.AssertionConsumerServiceURL)
+	if err := req.getACSEndpoint(); err != nil {
+		return fmt.Errorf("cannot find assertion consumer service: %v", err)
 	}
 
 	return nil
+}
+
+func (req *IdpAuthnRequest) getACSEndpoint() error {
+	if req.Request.AssertionConsumerServiceIndex != "" {
+		for _, spssoDescriptor := range req.ServiceProviderMetadata.SPSSODescriptors {
+			for _, spAssertionConsumerService := range spssoDescriptor.AssertionConsumerServices {
+				if strconv.Itoa(spAssertionConsumerService.Index) == req.Request.AssertionConsumerServiceIndex {
+					req.SPSSODescriptor = &spssoDescriptor
+					req.ACSEndpoint = &spAssertionConsumerService
+					return nil
+				}
+			}
+		}
+	}
+
+	if req.Request.AssertionConsumerServiceURL != "" {
+		for _, spssoDescriptor := range req.ServiceProviderMetadata.SPSSODescriptors {
+			for _, spAssertionConsumerService := range spssoDescriptor.AssertionConsumerServices {
+				if spAssertionConsumerService.Location == req.Request.AssertionConsumerServiceURL {
+					req.SPSSODescriptor = &spssoDescriptor
+					req.ACSEndpoint = &spAssertionConsumerService
+					return nil
+				}
+			}
+		}
+	}
+
+	return os.ErrNotExist // no ACS url found or specified
 }
 
 // MakeAssertion produces a SAML assertion for the
@@ -432,7 +467,7 @@ func (req *IdpAuthnRequest) MakeAssertion(session *Session) error {
 		ID:           fmt.Sprintf("id-%x", randomBytes(20)),
 		IssueInstant: TimeNow(),
 		Version:      "2.0",
-		Issuer: &Issuer{
+		Issuer: Issuer{
 			Format: "XXX",
 			Value:  req.IDP.Metadata().EntityID,
 		},
@@ -443,42 +478,54 @@ func (req *IdpAuthnRequest) MakeAssertion(session *Session) error {
 				SPNameQualifier: req.ServiceProviderMetadata.EntityID,
 				Value:           session.NameID,
 			},
-			SubjectConfirmation: &SubjectConfirmation{
-				Method: "urn:oasis:names:tc:SAML:2.0:cm:bearer",
-				SubjectConfirmationData: SubjectConfirmationData{
-					Address:      req.HTTPRequest.RemoteAddr,
-					InResponseTo: req.Request.ID,
-					NotOnOrAfter: TimeNow().Add(MaxIssueDelay),
-					Recipient:    req.ACSEndpoint.Location,
+			SubjectConfirmations: []SubjectConfirmation{
+				SubjectConfirmation{
+					Method: "urn:oasis:names:tc:SAML:2.0:cm:bearer",
+					SubjectConfirmationData: &SubjectConfirmationData{
+						Address:      req.HTTPRequest.RemoteAddr,
+						InResponseTo: req.Request.ID,
+						NotOnOrAfter: TimeNow().Add(MaxIssueDelay),
+						Recipient:    req.ACSEndpoint.Location,
+					},
 				},
 			},
 		},
 		Conditions: &Conditions{
 			NotBefore:    TimeNow(),
 			NotOnOrAfter: TimeNow().Add(MaxIssueDelay),
-			AudienceRestriction: &AudienceRestriction{
-				Audience: &Audience{Value: req.ServiceProviderMetadata.EntityID},
-			},
-		},
-		AuthnStatement: &AuthnStatement{
-			AuthnInstant: session.CreateTime,
-			SessionIndex: session.Index,
-			SubjectLocality: SubjectLocality{
-				Address: req.HTTPRequest.RemoteAddr,
-			},
-			AuthnContext: AuthnContext{
-				AuthnContextClassRef: &AuthnContextClassRef{
-					Value: "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
+			AudienceRestrictions: []AudienceRestriction{
+				AudienceRestriction{
+					Audience: Audience{Value: req.ServiceProviderMetadata.EntityID},
 				},
 			},
 		},
-		AttributeStatement: &AttributeStatement{
-			Attributes: attributes,
+		AuthnStatements: []AuthnStatement{
+			AuthnStatement{
+				AuthnInstant: session.CreateTime,
+				SessionIndex: session.Index,
+				SubjectLocality: &SubjectLocality{
+					Address: req.HTTPRequest.RemoteAddr,
+				},
+				AuthnContext: AuthnContext{
+					AuthnContextClassRef: &AuthnContextClassRef{
+						Value: "urn:oasis:names:tc:SAML:2.0:ac:classes:PasswordProtectedTransport",
+					},
+				},
+			},
+		},
+		AttributeStatements: []AttributeStatement{
+			AttributeStatement{
+				Attributes: attributes,
+			},
 		},
 	}
 
 	return nil
 }
+
+// The Canonicalizer prefix list MUST be empty. Various implementations
+// (maybe ours?) do not appear to support non-empty prefix lists in XML C14N.
+const canonicalizerPrefixList = ""
 
 // MakeAssertionEl sets `AssertionEl` to a signed, possibly encrypted, version of `Assertion`.
 func (req *IdpAuthnRequest) MakeAssertionEl() error {
@@ -490,15 +537,12 @@ func (req *IdpAuthnRequest) MakeAssertionEl() error {
 	keyStore := dsig.TLSCertKeyStore(keyPair)
 
 	signingContext := dsig.NewDefaultSigningContext(keyStore)
-	signingContext.Canonicalizer = dsig.MakeC14N10ExclusiveCanonicalizerWithPrefixList("#default samlp saml ds xs xsi md")
+	signingContext.Canonicalizer = dsig.MakeC14N10ExclusiveCanonicalizerWithPrefixList(canonicalizerPrefixList)
 	if err := signingContext.SetSignatureMethod(dsig.RSASHA1SignatureMethod); err != nil {
 		return err
 	}
 
-	assertionEl, err := marshalEtreeHack(req.Assertion)
-	if err != nil {
-		return err
-	}
+	assertionEl := req.Assertion.Element()
 
 	signedAssertionEl, err := signingContext.SignEnveloped(assertionEl)
 	if err != nil {
@@ -506,17 +550,11 @@ func (req *IdpAuthnRequest) MakeAssertionEl() error {
 	}
 
 	sigEl := signedAssertionEl.Child[len(signedAssertionEl.Child)-1]
-	signedAssertionEl = assertionEl.Copy()
-	signedAssertionEl.InsertChild(signedAssertionEl.Child[1], sigEl)
+	req.Assertion.Signature = sigEl.(*etree.Element)
+	signedAssertionEl = req.Assertion.Element()
 
-	certBuf, err := getSPEncryptionCert(req.ServiceProviderMetadata)
+	certBuf, err := req.getSPEncryptionCert()
 	if err == os.ErrNotExist {
-		{
-			doc := etree.NewDocument()
-			doc.SetRoot(signedAssertionEl)
-			signedAssertionBuf, _ := doc.WriteToBytes()
-			fmt.Println(string(signedAssertionBuf))
-		}
 		req.AssertionEl = signedAssertionEl
 		return nil
 	} else if err != nil {
@@ -531,7 +569,6 @@ func (req *IdpAuthnRequest) MakeAssertionEl() error {
 		if err != nil {
 			return err
 		}
-		fmt.Println(string(signedAssertionBuf))
 	}
 
 	encryptor := xmlenc.OAEP()
@@ -549,23 +586,6 @@ func (req *IdpAuthnRequest) MakeAssertionEl() error {
 	req.AssertionEl = encryptedAssertionEl
 
 	return nil
-}
-
-// marshalEtreeHack returns an etree.Element for the value v.
-//
-// This is a hack -- it first users xml.Marshal and then loads the
-// resulting buffer into an etree.
-func marshalEtreeHack(v interface{}) (*etree.Element, error) {
-	buf, err := xml.Marshal(v)
-	if err != nil {
-		return nil, err
-	}
-
-	doc := etree.NewDocument()
-	if err := doc.ReadFromBytes(buf); err != nil {
-		return nil, err
-	}
-	return doc.Root(), nil
 }
 
 // WriteResponse writes the `Response` to the http.ResponseWriter. If
@@ -623,37 +643,41 @@ func (req *IdpAuthnRequest) WriteResponse(w http.ResponseWriter) error {
 
 // getSPEncryptionCert returns the certificate which we can use to encrypt things
 // to the SP in PEM format, or nil if no such certificate is found.
-func getSPEncryptionCert(sp *Metadata) ([]byte, error) {
-	cert := ""
-	for _, keyDescriptor := range sp.SPSSODescriptor.KeyDescriptor {
+func (req *IdpAuthnRequest) getSPEncryptionCert() (*x509.Certificate, error) {
+	certStr := ""
+	for _, keyDescriptor := range req.SPSSODescriptor.KeyDescriptors {
 		if keyDescriptor.Use == "encryption" {
-			cert = keyDescriptor.KeyInfo.Certificate
+			certStr = keyDescriptor.KeyInfo.Certificate
 			break
 		}
 	}
 
-	// If there are no explicitly signing certs, just return the first
+	// If there are no certs explicitly labeled for encryption, return the first
 	// non-empty cert we find.
-	if cert == "" {
-		for _, keyDescriptor := range sp.SPSSODescriptor.KeyDescriptor {
+	if certStr == "" {
+		for _, keyDescriptor := range req.SPSSODescriptor.KeyDescriptors {
 			if keyDescriptor.Use == "" && keyDescriptor.KeyInfo.Certificate != "" {
-				cert = keyDescriptor.KeyInfo.Certificate
+				certStr = keyDescriptor.KeyInfo.Certificate
 				break
 			}
 		}
 	}
 
-	if cert == "" {
+	if certStr == "" {
 		return nil, os.ErrNotExist
 	}
 
 	// cleanup whitespace and re-encode a PEM
-	cert = regexp.MustCompile(`\s+`).ReplaceAllString(cert, "")
-	certBytes, err := base64.StdEncoding.DecodeString(cert)
+	certStr = regexp.MustCompile(`\s+`).ReplaceAllString(certStr, "")
+	certBytes, err := base64.StdEncoding.DecodeString(certStr)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("cannot decode certificate base64: %v", err)
 	}
-	return certBytes, nil
+	cert, err := x509.ParseCertificate(certBytes)
+	if err != nil {
+		return nil, fmt.Errorf("cannot parse certificate: %v", err)
+	}
+	return cert, nil
 }
 
 // unmarshalEtreeHack parses `el` and sets values in the structure `v`.
@@ -689,17 +713,15 @@ func (req *IdpAuthnRequest) MakeResponse() error {
 			Format: "urn:oasis:names:tc:SAML:2.0:nameid-format:entity",
 			Value:  req.IDP.MetadataURL.String(),
 		},
-		Status: &Status{
+		Status: Status{
 			StatusCode: StatusCode{
 				Value: StatusSuccess,
 			},
 		},
 	}
-	responseEl, err := marshalEtreeHack(response)
-	if err != nil {
-		return err
-	}
-	responseEl.AddChild(req.AssertionEl)
+
+	responseEl := response.Element()
+	responseEl.AddChild(req.AssertionEl) // AssertionEl either an EncryptedAssertion or Assertion element
 
 	req.ResponseEl = responseEl
 	return nil
