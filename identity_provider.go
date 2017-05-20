@@ -490,6 +490,7 @@ func (req *IdpAuthnRequest) MakeAssertionEl() error {
 	keyStore := dsig.TLSCertKeyStore(keyPair)
 
 	signingContext := dsig.NewDefaultSigningContext(keyStore)
+	signingContext.Canonicalizer = dsig.MakeC14N10ExclusiveCanonicalizerWithPrefixList("#default samlp saml ds xs xsi md")
 	if err := signingContext.SetSignatureMethod(dsig.RSASHA1SignatureMethod); err != nil {
 		return err
 	}
@@ -504,8 +505,18 @@ func (req *IdpAuthnRequest) MakeAssertionEl() error {
 		return err
 	}
 
+	sigEl := signedAssertionEl.Child[len(signedAssertionEl.Child)-1]
+	signedAssertionEl = assertionEl.Copy()
+	signedAssertionEl.InsertChild(signedAssertionEl.Child[1], sigEl)
+
 	certBuf, err := getSPEncryptionCert(req.ServiceProviderMetadata)
 	if err == os.ErrNotExist {
+		{
+			doc := etree.NewDocument()
+			doc.SetRoot(signedAssertionEl)
+			signedAssertionBuf, _ := doc.WriteToBytes()
+			fmt.Println(string(signedAssertionBuf))
+		}
 		req.AssertionEl = signedAssertionEl
 		return nil
 	} else if err != nil {
@@ -520,6 +531,7 @@ func (req *IdpAuthnRequest) MakeAssertionEl() error {
 		if err != nil {
 			return err
 		}
+		fmt.Println(string(signedAssertionBuf))
 	}
 
 	encryptor := xmlenc.OAEP()

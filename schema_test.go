@@ -1,57 +1,36 @@
 package saml
 
 import (
-    "encoding/xml"
-    "testing"
+	"encoding/xml"
+
+	. "gopkg.in/check.v1"
 )
 
-func TestAttributeXMLRoundTrip(t *testing.T) {
-    expected := Attribute{
-        FriendlyName: "TestFriendlyName",
-        Name:         "TestName",
-        NameFormat:   "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
-        Values: []AttributeValue{AttributeValue{
-            Type:  "xs:string",
-            Value: "test",
-        }},
-    }
+var _ = Suite(&SchemaTest{})
 
-    x, err := xml.Marshal(expected)
-    if err != nil {
-        t.Fatalf("failed to marhsal AttributeValue to XML: %v", err)
-    }
+type SchemaTest struct {
+}
 
-    var actual Attribute
-    err = xml.Unmarshal(x, &actual)
-    if err != nil {
-        t.Fatalf("Failed to unrmarshall XML '%v': %v", string(x), err)
-    }
+func (test *SchemaTest) TestAttributeXMLRoundTrip(c *C) {
+	expected := Attribute{
+		FriendlyName: "TestFriendlyName",
+		Name:         "TestName",
+		NameFormat:   "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
+		Values: []AttributeValue{AttributeValue{
+			Type:  "xs:string",
+			Value: "test",
+		}},
+	}
 
-    if actual.FriendlyName != expected.FriendlyName {
-        t.Errorf("expected FriendlyName of '%v', got: %v", expected.FriendlyName, actual.FriendlyName)
-    }
+	x, err := xml.Marshal(expected)
+	c.Assert(err, IsNil)
+	c.Assert(string(x), Equals, "<Attribute FriendlyName=\"TestFriendlyName\" "+
+		"Name=\"TestName\" NameFormat=\"urn:oasis:names:tc:SAML:2.0:attrname-format:basic\">"+
+		"<AttributeValue xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xmlns:xs=\"http://www.w3.org/2001/XMLSchema\" "+
+		"xsi:type=\"xs:string\">test</AttributeValue></Attribute>")
 
-    if actual.Name != expected.Name {
-        t.Errorf("expected Name of '%v', got: %v", expected.Name, actual.Name)
-    }
-
-    if actual.NameFormat != expected.NameFormat {
-        t.Errorf("expected NameFormat of '%v', got: %v", expected.NameFormat, actual.NameFormat)
-    }
-
-    if len(actual.Values) != len(expected.Values) {
-        t.Fatalf("expected %d values, got: %d", len(expected.Values), len(actual.Values))
-    }
-
-    for i, expectedValue := range expected.Values {
-        actualValue := actual.Values[i]
-
-        if expectedValue.Type != actualValue.Type {
-            t.Fatalf("expected value %d to have Type of %s, but got %s", i, expectedValue.Type, actualValue.Type)
-        }
-
-        if expectedValue.Value != actualValue.Value {
-            t.Fatalf("expected value %d to have Value of %s, but got %s", i, expectedValue.Value, actualValue.Value)
-        }
-    }
+	var actual Attribute
+	err = xml.Unmarshal(x, &actual)
+	c.Assert(err, IsNil)
+	c.Assert(actual, DeepEquals, expected)
 }
