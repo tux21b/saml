@@ -22,6 +22,7 @@ import (
 
 	"github.com/beevik/etree"
 	"github.com/crewjam/saml/xmlenc"
+	"github.com/kr/pretty"
 	dsig "github.com/russellhaering/goxmldsig"
 )
 
@@ -387,8 +388,86 @@ func (req *IdpAuthnRequest) getACSEndpoint() error {
 // MakeAssertion produces a SAML assertion for the
 // given request and assigns it to req.Assertion.
 func (req *IdpAuthnRequest) MakeAssertion(session *Session) error {
-
 	attributes := []Attribute{}
+
+	log.Printf("req.SPSSODescriptor.AttributeConsumingServices: %v", req.SPSSODescriptor.AttributeConsumingServices)
+	var attributeConsumingService *AttributeConsumingService
+	for _, acs := range req.SPSSODescriptor.AttributeConsumingServices {
+		if acs.IsDefault != nil && *acs.IsDefault {
+			attributeConsumingService = &acs
+			break
+		}
+	}
+	if attributeConsumingService == nil {
+		for _, acs := range req.SPSSODescriptor.AttributeConsumingServices {
+			attributeConsumingService = &acs
+			break
+		}
+	}
+	if attributeConsumingService == nil {
+		attributeConsumingService = &AttributeConsumingService{}
+	}
+
+	for _, requestedAttribute := range attributeConsumingService.RequestedAttributes {
+		log.Printf("requestedAttribute: %v", requestedAttribute)
+		if requestedAttribute.NameFormat == "urn:oasis:names:tc:SAML:2.0:attrname-format:basic" || requestedAttribute.NameFormat == "urn:oasis:names:tc:SAML:2.0:attrname-format:unspecified" {
+			attrName := requestedAttribute.Name
+			attrName = regexp.MustCompile("[^A-Za-z0-9]+").ReplaceAllString(attrName, "")
+			switch attrName {
+			case "email", "emailaddress":
+				attributes = append(attributes, Attribute{
+					FriendlyName: requestedAttribute.FriendlyName,
+					Name:         requestedAttribute.Name,
+					NameFormat:   requestedAttribute.NameFormat,
+					Values: []AttributeValue{{
+						Type:  "xs:string",
+						Value: session.UserEmail,
+					}},
+				})
+			case "name", "fullname", "cn", "commonname":
+				attributes = append(attributes, Attribute{
+					FriendlyName: requestedAttribute.FriendlyName,
+					Name:         requestedAttribute.Name,
+					NameFormat:   requestedAttribute.NameFormat,
+					Values: []AttributeValue{{
+						Type:  "xs:string",
+						Value: session.UserCommonName,
+					}},
+				})
+			case "givenname", "firstname":
+				attributes = append(attributes, Attribute{
+					FriendlyName: requestedAttribute.FriendlyName,
+					Name:         requestedAttribute.Name,
+					NameFormat:   requestedAttribute.NameFormat,
+					Values: []AttributeValue{{
+						Type:  "xs:string",
+						Value: session.UserGivenName,
+					}},
+				})
+			case "surname", "lastname", "familyname":
+				attributes = append(attributes, Attribute{
+					FriendlyName: requestedAttribute.FriendlyName,
+					Name:         requestedAttribute.Name,
+					NameFormat:   requestedAttribute.NameFormat,
+					Values: []AttributeValue{{
+						Type:  "xs:string",
+						Value: session.UserSurname,
+					}},
+				})
+			case "uid", "user", "userid":
+				attributes = append(attributes, Attribute{
+					FriendlyName: requestedAttribute.FriendlyName,
+					Name:         requestedAttribute.Name,
+					NameFormat:   requestedAttribute.NameFormat,
+					Values: []AttributeValue{{
+						Type:  "xs:string",
+						Value: session.UserName,
+					}},
+				})
+			}
+		}
+	}
+
 	if session.UserName != "" {
 		attributes = append(attributes, Attribute{
 			FriendlyName: "uid",
@@ -519,6 +598,8 @@ func (req *IdpAuthnRequest) MakeAssertion(session *Session) error {
 			},
 		},
 	}
+
+	pretty.Print(req.Assertion)
 
 	return nil
 }

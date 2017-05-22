@@ -21,6 +21,7 @@ import (
 	"github.com/crewjam/saml/testsaml"
 	"github.com/crewjam/saml/xmlenc"
 	"github.com/dgrijalva/jwt-go"
+	"github.com/kr/pretty"
 	. "gopkg.in/check.v1"
 )
 
@@ -928,4 +929,133 @@ func (test *IdentityProviderTest) TestCanHandleUnencryptedResponse(c *C) {
 		"    </saml:AttributeStatement>\n"+
 		"  </saml:Assertion>\n"+
 		"</samlp:Response>\n")
+}
+
+func (test *IdentityProviderTest) TestRequestedAttributes(c *C) {
+	metadata := EntityDescriptor{}
+	err := xml.Unmarshal([]byte(`<?xml version='1.0' encoding='UTF-8'?><md:EntityDescriptor ID='_85fdc505-39e4-4c20-a67f-ca15f4e4064a' entityID='https://dev.aa.kndr.org/users/auth/saml/metadata' xmlns:md='urn:oasis:names:tc:SAML:2.0:metadata' xmlns:saml='urn:oasis:names:tc:SAML:2.0:assertion'><md:SPSSODescriptor AuthnRequestsSigned='false' WantAssertionsSigned='false' protocolSupportEnumeration='urn:oasis:names:tc:SAML:2.0:protocol'><md:AssertionConsumerService Binding='urn:oasis:names:tc:SAML:2.0:bindings:HTTP-POST' Location='https://dev.aa.kndr.org/users/auth/saml/callback' index='0' isDefault='true'/><md:AttributeConsumingService index='1' isDefault='true'><md:ServiceName xml:lang='en'>Required attributes</md:ServiceName><md:RequestedAttribute FriendlyName='Email address' Name='email' NameFormat='urn:oasis:names:tc:SAML:2.0:attrname-format:basic'/><md:RequestedAttribute FriendlyName='Full name' Name='name' NameFormat='urn:oasis:names:tc:SAML:2.0:attrname-format:basic'/><md:RequestedAttribute FriendlyName='Given name' Name='first_name' NameFormat='urn:oasis:names:tc:SAML:2.0:attrname-format:basic'/><md:RequestedAttribute FriendlyName='Family name' Name='last_name' NameFormat='urn:oasis:names:tc:SAML:2.0:attrname-format:basic'/></md:AttributeConsumingService></md:SPSSODescriptor></md:EntityDescriptor>`), &metadata)
+	c.Assert(err, IsNil)
+
+	requestURL, err := test.SP.MakeRedirectAuthenticationRequest("ThisIsTheRelayState")
+	c.Assert(err, IsNil)
+
+	r, _ := http.NewRequest("GET", requestURL.String(), nil)
+	req, err := NewIdpAuthnRequest(&test.IDP, r)
+	req.ServiceProviderMetadata = &metadata
+	req.ACSEndpoint = &metadata.SPSSODescriptors[0].AssertionConsumerServices[0]
+	req.SPSSODescriptor = &metadata.SPSSODescriptors[0]
+	c.Assert(err, IsNil)
+	err = req.MakeAssertion(&Session{
+		ID:             "f00df00df00d",
+		UserName:       "alice",
+		UserEmail:      "alice@example.com",
+		UserGivenName:  "Alice",
+		UserSurname:    "Smith",
+		UserCommonName: "Alice Smith",
+	})
+	c.Assert(err, IsNil)
+
+	pretty.Print(req.Assertion)
+	c.Assert(req.Assertion.AttributeStatements, DeepEquals, []AttributeStatement{AttributeStatement{
+		Attributes: []Attribute{
+			Attribute{
+				FriendlyName: "Email address",
+				Name:         "email",
+				NameFormat:   "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
+				Values: []AttributeValue{
+					{
+						Type:  "xs:string",
+						Value: "alice@example.com",
+					},
+				},
+			},
+			Attribute{
+				FriendlyName: "Full name",
+				Name:         "name",
+				NameFormat:   "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
+				Values: []AttributeValue{
+					{
+						Type:  "xs:string",
+						Value: "Alice Smith",
+					},
+				},
+			},
+			Attribute{
+				FriendlyName: "Given name",
+				Name:         "first_name",
+				NameFormat:   "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
+				Values: []AttributeValue{
+					{
+						Type:  "xs:string",
+						Value: "Alice",
+					},
+				},
+			},
+			Attribute{
+				FriendlyName: "Family name",
+				Name:         "last_name",
+				NameFormat:   "urn:oasis:names:tc:SAML:2.0:attrname-format:basic",
+				Values: []AttributeValue{
+					{
+						Type:  "xs:string",
+						Value: "Smith",
+					},
+				},
+			},
+			Attribute{
+				FriendlyName: "uid",
+				Name:         "urn:oid:0.9.2342.19200300.100.1.1",
+				NameFormat:   "urn:oasis:names:tc:SAML:2.0:attrname-format:uri",
+				Values: []AttributeValue{
+					{
+						Type:  "xs:string",
+						Value: "alice",
+					},
+				},
+			},
+			Attribute{
+				FriendlyName: "eduPersonPrincipalName",
+				Name:         "urn:oid:1.3.6.1.4.1.5923.1.1.1.6",
+				NameFormat:   "urn:oasis:names:tc:SAML:2.0:attrname-format:uri",
+				Values: []AttributeValue{
+					{
+						Type:  "xs:string",
+						Value: "alice@example.com",
+					},
+				},
+			},
+			Attribute{
+				FriendlyName: "sn",
+				Name:         "urn:oid:2.5.4.4",
+				NameFormat:   "urn:oasis:names:tc:SAML:2.0:attrname-format:uri",
+				Values: []AttributeValue{
+					{
+						Type:  "xs:string",
+						Value: "Smith",
+					},
+				},
+			},
+			Attribute{
+				FriendlyName: "givenName",
+				Name:         "urn:oid:2.5.4.42",
+				NameFormat:   "urn:oasis:names:tc:SAML:2.0:attrname-format:uri",
+				Values: []AttributeValue{
+					{
+						Type:  "xs:string",
+						Value: "Alice",
+					},
+				},
+			},
+			Attribute{
+				FriendlyName: "cn",
+				Name:         "urn:oid:2.5.4.3",
+				NameFormat:   "urn:oasis:names:tc:SAML:2.0:attrname-format:uri",
+				Values: []AttributeValue{
+					{
+						Type:  "xs:string",
+						Value: "Alice Smith",
+					},
+				},
+			},
+		}}})
 }
